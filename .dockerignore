@@ -10,3 +10,8 @@ data/
 __pycache__/
 **/__pycache__/
 *.pyc
+**/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/test-results/
+.venv/

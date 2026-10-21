@@ -29,7 +29,7 @@ ROOT_URLCONF = 'balance_watch.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'public'],
+        'DIRS': [BASE_DIR / 'frontend' / 'dist'],
         'APP_DIRS': False,
         'OPTIONS': {'context_processors': []},
     },
@@ -55,7 +55,7 @@ TIME_ZONE = 'Asia/Shanghai'
 USE_TZ = True
 
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'public']
+STATICFILES_DIRS = [BASE_DIR / 'frontend' / 'dist']
 
 # App-level config
 APP_USERNAME = _credentials['APP_USERNAME']

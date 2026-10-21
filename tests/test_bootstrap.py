@@ -94,6 +94,7 @@ class BootstrapTests(unittest.TestCase):
         script = '''
 import hashlib
 import json
+import re
 import django
 django.setup()
 from django.conf import settings
@@ -101,6 +102,10 @@ from django.core.management import call_command
 from django.test import Client
 call_command('check', verbosity=0)
 client = Client()
+assert client.get('/').status_code == 302
+login_page = client.get('/login.html')
+assert login_page.status_code == 200
+assert b'id="root"' in login_page.content
 assert client.get('/api/sites').status_code == 401
 assert client.post('/api/login', data=json.dumps({
     'username': settings.APP_USERNAME, 'password': 'wrong-password'
@@ -112,7 +117,14 @@ assert response.json()['ok'] is True
 # The application writes a raw Set-Cookie header; emulate browser cookie storage.
 client.cookies.load(response['Set-Cookie'])
 assert client.get('/api/sites').status_code == 200
-assert client.get('/').status_code == 200
+index_page = client.get('/')
+assert index_page.status_code == 200
+assets = re.findall(r'(?:src|href)="(/assets/[^"]+)"', index_page.content.decode())
+assert assets
+content_types = {client.get(path)['Content-Type'].split(';')[0] for path in assets}
+assert 'text/javascript' in content_types
+assert 'text/css' in content_types
+assert client.get('/favicon.svg')['Content-Type'] == 'image/svg+xml'
 assert client.get('/bootstrap.json').status_code == 404
 assert client.get('/data/bootstrap.json').status_code == 404
 print('FINGERPRINT:' + hashlib.sha256(

@@ -1,6 +1,6 @@
 # 余额哨兵
 
-一个无需单独部署数据库的多站点余额监控面板，使用 Django 和内置 SQLite 存储数据。你可以添加多个网站，每个站点独立配置接口地址、账号或 Token、余额路径和阈值，所有站点共用一个企业微信 Webhook。服务端负责代理登录和余额请求，避免浏览器跨域；余额低于阈值时通过企业微信机器人发送 Markdown 预警。余额统一显示为两位小数。
+一个无需单独部署数据库的多站点余额监控面板，使用 React + Vite 提供前端、Django 提供 API，并用内置 SQLite 存储数据。你可以添加多个网站，每个站点独立配置接口地址、账号或 Token、余额路径和阈值，所有站点共用一个企业微信 Webhook。服务端负责代理登录和余额请求，避免浏览器跨域；余额低于阈值时通过企业微信机器人发送 Markdown 预警。余额统一显示为两位小数。
 
 站点配置保存到 Docker 数据卷。每个站点可设置独立查询间隔，最短 30 秒；定时任务运行在后端，浏览器关闭后仍会继续检查和预警。
 
@@ -58,6 +58,8 @@ docker compose -f docker-compose.django.yml up -d --build
 docker compose -f docker-compose.django.yml logs balance-watch
 ```
 
+镜像使用多阶段构建：Node 阶段自动安装依赖并生成 React 静态文件，随后由 Django/Gunicorn 提供页面和 API。服务器无需单独安装 Node.js 或手动执行前端构建。
+
 无需创建 `.env`。首次启动自动生成随机管理员密码和 Django 密钥，管理员账号默认为 `admin`。初始密码只在生成时输出到容器日志，找到 `Initial administrator credentials` 下的 `Username` 和 `Password` 即可登录；Django 密钥不会输出到日志。
 
 凭据保存在数据卷的 `/data/bootstrap.json`（仅文件所有者可读写），数据库保存在 `/data/db.sqlite3`。重启、重建容器和更新镜像均复用原有凭据。请保留并备份 `balance_data` 数据卷，勿执行 `docker compose ... down -v`，该操作会删除数据和凭据。
@@ -103,14 +105,40 @@ docker compose -f docker-compose.django.yml up -d --build
 
 ## 本地运行
 
-需要 Python 3.11 或更高版本：
+需要 Node.js 22、Python 3.11 或更高版本。以接近 Docker 的方式运行生产构建：
 
 ```powershell
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
 python -m pip install -r requirements.txt
 python manage.py runserver 0.0.0.0:3000 --noreload
 ```
 
 浏览器打开 <http://localhost:3000>。本地运行同样自动生成凭据，默认保存在 `data/bootstrap.json`，初始管理员密码输出到终端。
+
+前端开发时，保持 Django 运行在 `127.0.0.1:3000`，另开终端启动 Vite：
+
+```powershell
+Set-Location frontend
+npm run dev
+```
+
+浏览器打开 <http://localhost:5173>。Vite 会将 `/api` 请求代理到 Django，修改 React 源码后页面自动刷新。
+
+## 测试
+
+```powershell
+Set-Location frontend
+npm test
+npm run build
+npm run test:e2e
+Set-Location ..
+python -m unittest discover -s tests -v
+```
+
+端到端测试在 Windows 上默认使用标准路径安装的 Google Chrome；其他环境可先执行 `npx playwright install chromium`，或通过 `PLAYWRIGHT_CHROME_PATH` 指定浏览器。后端集成测试会读取 `frontend/dist`，因此运行前需先完成前端构建。
 
 ## 使用说明
 

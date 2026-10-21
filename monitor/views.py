@@ -25,7 +25,7 @@ from monitor.storage import save_sites, save_upstream_sessions
 
 logger = logging.getLogger(__name__)
 
-PUBLIC_DIR = Path(__file__).resolve().parent.parent / 'public'
+PUBLIC_DIR = Path(__file__).resolve().parent.parent / 'frontend' / 'dist'
 _MIME = {
     '.html': 'text/html; charset=utf-8',
     '.css':  'text/css; charset=utf-8',

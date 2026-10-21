@@ -3,3 +3,7 @@ data/
 __pycache__/
 *.py[cod]
 .venv/
+node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/test-results/
