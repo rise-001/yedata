@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+ENV DJANGO_SETTINGS_MODULE=balance_watch.settings
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PORT=3000
+ENV HOST=0.0.0.0
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+ENV DATA_DIR=/data
+
+EXPOSE 3000
+
+CMD ["python", "-m", "gunicorn", "balance_watch.wsgi:application", \
+     "--bind", "0.0.0.0:3000", "--workers", "1", "--threads", "4", \
+     "--timeout", "120", "--access-logfile", "-"]

@@ -1,0 +1,23 @@
+services:
+  balance-watch:
+    build:
+      context: .
+      dockerfile: Dockerfile.django
+    image: balance-watch-django
+    container_name: balance-watch-django
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3010}:3000"
+    volumes:
+      - balance_data:/data
+    environment:
+      - DATA_DIR=/data
+      - APP_USERNAME=${APP_USERNAME:-}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - CHECK_CONCURRENCY=${CHECK_CONCURRENCY:-5}
+      - DAILY_REPORT_HOUR=${DAILY_REPORT_HOUR:-8}
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-}
+
+volumes:
+  balance_data:
