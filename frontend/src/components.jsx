@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, ExternalLink, Plus, Power, RefreshCw, Trash2 } from 'lucide-react';
+import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, X } from 'lucide-react';
 import { formatBalance, formatInterval, formatTime, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
@@ -72,24 +72,70 @@ export function SiteCard({ site, result, index, busy, checking, selected, onChan
 }
 
 export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }) {
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('all');
   const statuses = sites.map((site) => siteStatus(site, results[site.id]));
-  const counts = [sites.length, statuses.filter((s) => s.kind === 'healthy').length,
-    statuses.filter((s) => ['warning', 'failed'].includes(s.kind)).length,
-    sites.filter((site) => site.enabled).length];
-  const summary = [['监控站点', '已配置站点'], ['正常余额', '高于预警阈值'], ['需要关注', '余额预警或检查失败'], ['正在监控', '后端持续自动检查']];
-  return <>
-    <section className="summary-grid" aria-label="监控统计">{summary.map(([title, hint], index) => <article key={title} className={`summary-card ${index === 2 ? 'warning-card' : index === 3 ? 'accent-card' : ''}`}><span>{title}</span><strong>{counts[index]}</strong><small>{hint}</small></article>)}</section>
-    <section className="balance-dashboard"><header className="panel-header"><div><span className="section-index">看板</span><h2>网站余额</h2></div><small>每 15 秒同步检查结果</small></header>
-      {!sites.length ? <div className="empty-state"><span className="empty-icon">◈</span><h3>开始监控你的第一个站点</h3><p>添加网站和认证信息，余额与预警状态会显示在这里。</p><button className="primary-button" onClick={onAdd}><Plus size={15} aria-hidden="true" />添加站点</button></div>
-        : <div className="table-wrap"><table><thead><tr>{['网站', '可用余额', '预警线', '状态', '查询间隔', '最近检查', '操作'].map((title) => <th key={title}>{title}</th>)}</tr></thead>
-          <tbody>{sites.map((site) => { const result = results[site.id]; const currency = result?.currency || site.currency; return <tr key={site.id} className={!site.enabled ? 'disabled-row' : ''}>
-            <td data-label="网站"><button className="site-link" onClick={() => onEdit(site.id)}>{site.name}<em>{typeNames[site.siteType] || '自动识别'}</em></button><small className="site-url">{site.baseUrl}</small></td>
-            <td data-label="可用余额" className="balance-cell">{result?.ok ? formatBalance(result.balance) : '—'} <small>{currency}</small></td>
-            <td data-label="预警线">{formatBalance(site.threshold)} <small>{currency}</small></td>
-            <td data-label="状态" title={result?.message}><Status site={site} result={result} checking={checkingIds.includes(site.id)} /></td>
-            <td data-label="查询间隔">{formatInterval(site.intervalSeconds)}</td><td data-label="最近检查">{formatTime(result?.checkedAt)}</td>
-            <td data-label="操作"><button className="secondary-button small-button" onClick={() => onOpen(site)}>进入网站 <ExternalLink size={12} aria-hidden="true" /></button></td>
-          </tr>; })}</tbody></table></div>}
+  const healthy = statuses.filter((status) => status.kind === 'healthy').length;
+  const attention = statuses.filter((status) => ['warning', 'failed'].includes(status.kind)).length;
+  const enabled = sites.filter((site) => site.enabled).length;
+  const pending = statuses.filter((status) => status.kind === 'pending').length;
+  const summary = [
+    { title: '监控站点', value: sites.length, hint: '所有已配置的监控站点', label: '站点总览', Icon: Globe2, kind: 'total' },
+    { title: '正常余额', value: healthy, hint: '余额高于预警阈值', label: '余额充足', Icon: CircleCheck, kind: 'healthy' },
+    { title: '需要关注', value: attention, hint: '余额预警或检查失败', label: attention ? '建议及时处理' : '暂无异常', Icon: TriangleAlert, kind: 'attention' },
+    { title: '正在监控', value: enabled, hint: '已启用后台自动检查', label: '自动监控', Icon: Activity, kind: 'active' },
+  ];
+  const filters = [
+    { id: 'all', label: '全部站点', count: sites.length },
+    { id: 'healthy', label: '正常', count: healthy },
+    { id: 'attention', label: '需关注', count: attention },
+    { id: 'disabled', label: '已停用', count: sites.length - enabled },
+  ];
+  const search = query.trim().toLocaleLowerCase();
+  const visibleSites = sites.filter((site) => {
+    const kind = siteStatus(site, results[site.id]).kind;
+    const matchesFilter = filter === 'all' || (filter === 'attention' ? ['warning', 'failed'].includes(kind) : kind === filter);
+    return matchesFilter && (!search || `${site.name} ${site.baseUrl}`.toLocaleLowerCase().includes(search));
+  });
+  function clearFilters() { setQuery(''); setFilter('all'); }
+
+  return <div className="dashboard-content">
+    <section className="overview-metrics" aria-label="监控统计">{summary.map(({ title, value, hint, label, Icon, kind }) =>
+      <article key={title} className={`overview-metric metric-${kind}`}>
+        <div className="metric-heading"><span>{title}</span><span className="metric-icon"><Icon size={19} strokeWidth={1.7} aria-hidden="true" /></span></div>
+        <div className="metric-value"><strong>{value}</strong><span>个站点</span></div>
+        <div className="metric-caption"><small>{hint}</small><span className="metric-label">{kind === 'active' && <i aria-hidden="true" />}{label}</span></div>
+      </article>)}
     </section>
-  </>;
+
+    <section className="overview-panel" aria-labelledby="balance-panel-title">
+      <header className="overview-panel-header"><div className="overview-panel-title"><span className="panel-symbol"><Globe2 size={20} strokeWidth={1.7} aria-hidden="true" /></span><div><h2 id="balance-panel-title">网站余额</h2><p>余额与运行状态，尽在掌握。</p></div></div>
+        {sites.length > 0 && <button className="primary-button dashboard-add" onClick={onAdd}><Plus size={16} aria-hidden="true" />添加站点</button>}
+      </header>
+      {!sites.length ? <div className="overview-empty"><span className="overview-empty-icon"><Globe2 size={32} strokeWidth={1.4} aria-hidden="true" /></span><h3>开始监控你的第一个站点</h3><p>添加网站和认证信息，<br />在这里统一查看余额、接收预警。</p><button className="primary-button" onClick={onAdd}><Plus size={16} aria-hidden="true" />添加站点</button><small><ShieldCheck size={14} aria-hidden="true" />凭据仅保存在服务器端</small></div>
+        : <>
+          <div className="overview-toolbar"><div className="overview-filters" role="group" aria-label="按站点状态筛选">{filters.map((item) => <button key={item.id} className={filter === item.id ? 'overview-filter is-selected' : 'overview-filter'} aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>{item.label}<span>{item.count}</span></button>)}</div>
+            <div className="overview-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索站点" placeholder="搜索站点名称或网址" value={query} onChange={(event) => setQuery(event.target.value)} type="search" />{query && <button aria-label="清空搜索" onClick={() => setQuery('')}><X size={14} aria-hidden="true" /></button>}</div>
+          </div>
+          {!visibleSites.length ? <div className="overview-empty filtered-empty"><span className="overview-empty-icon"><Search size={27} strokeWidth={1.5} aria-hidden="true" /></span><h3>没有找到匹配的站点</h3><p>试试其他名称、网址，或调整状态筛选。</p><button className="secondary-button" onClick={clearFilters}>清除筛选</button></div>
+            : <div className="overview-table-wrap"><table className="overview-table"><caption className="sr-only">网站余额及监控状态</caption><thead><tr>{['站点信息', '可用余额', '预警阈值', '监控状态', '最近检查', '操作'].map((title) => <th key={title} scope="col">{title}</th>)}</tr></thead>
+              <tbody>{visibleSites.map((site) => {
+                const result = results[site.id];
+                const status = siteStatus(site, result);
+                const currency = result?.currency || site.currency;
+                const siteName = site.name || '未命名站点';
+                return <tr key={site.id} className={`overview-row row-${status.kind}`}>
+                  <td className="overview-site" data-label="站点"><span className={`site-avatar avatar-${site.siteType}`} aria-hidden="true">{siteName.trim().charAt(0).toLocaleUpperCase()}</span><div className="overview-site-info"><button className="overview-site-link" onClick={() => onEdit(site.id)}>{siteName}</button><span className="overview-site-meta"><span className="site-type-tag">{typeNames[site.siteType] || '自动识别'}</span><span className="overview-site-url" title={site.baseUrl}>{site.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span></span></div></td>
+                  <td className="overview-balance" data-label="可用余额"><strong>{result?.ok ? formatBalance(result.balance) : '—'}</strong><span>{currency || '—'}</span></td>
+                  <td className="overview-threshold" data-label="预警阈值"><span>{formatBalance(site.threshold)}</span><small>{currency || '—'}</small></td>
+                  <td className="overview-status" data-label="监控状态"><Status site={site} result={result} checking={checkingIds.includes(site.id)} />{site.enabled && result?.ok === false && <small className="overview-error" title={result.message}>{result.message || '请检查站点配置'}</small>}</td>
+                  <td className="overview-checked" data-label="最近检查"><time dateTime={result?.checkedAt || undefined}>{formatTime(result?.checkedAt)}</time><small><RefreshCw size={11} aria-hidden="true" />每 {formatInterval(site.intervalSeconds)}检查</small></td>
+                  <td className="overview-action" data-label="操作"><button className="overview-open" onClick={() => onOpen(site)}>进入网站 <ArrowUpRight size={16} aria-hidden="true" /></button></td>
+                </tr>;
+              })}</tbody></table></div>}
+          <footer className="overview-panel-footer"><span role="status">显示 {visibleSites.length} / {sites.length} 个站点{pending > 0 && <span className="overview-pending"> · {pending} 个待检查</span>}</span><span><RefreshCw size={12} aria-hidden="true" />每 15 秒同步检查结果</span></footer>
+        </>}
+    </section>
+    <p className="overview-note"><ShieldCheck size={14} aria-hidden="true" />自动监控在后台持续运行，关闭页面后仍会按配置检查。</p>
+  </div>;
 }

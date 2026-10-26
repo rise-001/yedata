@@ -10,7 +10,17 @@ class MonitorConfig(AppConfig):
         # Run migrations automatically so the DB is always up to date.
         self._ensure_tables()
 
-        if 'runserver' in sys.argv or 'gunicorn' in sys.modules or 'uvicorn' in sys.modules:
+        # Start the monitor for every web process. Checking only whether the
+        # ``gunicorn`` module happens to be imported is brittle across WSGI
+        # launchers, while management commands must not create a background
+        # thread. ``scheduler.start`` is idempotent within a process.
+        management_commands = {
+            'check', 'collectstatic', 'makemigrations', 'migrate', 'shell',
+            'test', 'createsuperuser',
+        }
+        command = next((arg for arg in sys.argv[1:] if not arg.startswith('-')), '')
+        is_management = command in management_commands
+        if not is_management:
             from monitor import scheduler
             scheduler.start()
         else:

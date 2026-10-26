@@ -13,10 +13,10 @@ const site = {
   currency: 'CNY',
 };
 
-async function mockApi(page, { authenticated = true, results = {} } = {}) {
+async function mockApi(page, { authenticated = true, results = {}, sites = [site] } = {}) {
   const state = {
     authenticated,
-    sites: [site],
+    sites,
     results,
     settings: { hasWebhook: true },
     calls: [],
@@ -100,4 +100,60 @@ test('移动端看板没有横向溢出', async ({ page }, testInfo) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath('mobile-dashboard.png'), fullPage: true });
+});
+
+test('概览按状态与名称筛选，并适配混合状态的多站点布局', async ({ page }, testInfo) => {
+  const checkedAt = '2026-10-21T02:00:00Z';
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockApi(page, {
+    sites: [
+      { ...site, name: '主力服务站' },
+      { ...site, id: 'beta', name: '备用 API', siteType: 'newapi', currency: 'USD', threshold: 10, baseUrl: 'https://backup.example.com' },
+      { ...site, id: 'gamma', name: '团队工作空间', baseUrl: 'https://team.example.com' },
+      { ...site, id: 'delta', name: '新接入站点', baseUrl: 'https://new.example.com' },
+      { ...site, id: 'epsilon', name: '已归档站点', enabled: false, baseUrl: 'https://archive.example.com' },
+    ],
+    results: {
+      alpha: { ok: true, balance: 1280.36, currency: 'CNY', checkedAt },
+      beta: { ok: true, balance: 4.5, currency: 'USD', checkedAt },
+      gamma: { ok: false, message: '登录会话已过期，请检查认证信息', checkedAt },
+      epsilon: { ok: true, balance: 320, currency: 'CNY', checkedAt },
+    },
+  });
+  await page.goto('/');
+  const rows = page.locator('.overview-table tbody tr');
+  await expect(rows).toHaveCount(5);
+  await expect(page.getByText('1,280.36')).toBeVisible();
+  await expect(page.getByText('4.50')).toBeVisible();
+  await page.getByRole('button', { name: /^需关注/ }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '备用 API', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '团队工作空间', exact: true })).toBeVisible();
+  await page.getByRole('searchbox', { name: '搜索站点' }).fill('backup.example.com');
+  await expect(rows).toHaveCount(1);
+  await page.getByRole('searchbox', { name: '搜索站点' }).fill('无匹配内容');
+  await expect(page.getByText('没有找到匹配的站点')).toBeVisible();
+  await page.getByRole('button', { name: '清除筛选' }).click();
+  await expect(rows).toHaveCount(5);
+  await page.getByRole('button', { name: /^已停用/ }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '已归档站点', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: /^全部站点/ }).click();
+  await page.screenshot({ path: testInfo.outputPath('dashboard-desktop.png'), fullPage: true });
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+    await expect(page.getByRole('button', { name: '添加站点', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`dashboard-mobile-${width}.png`), fullPage: true });
+  }
+});
+
+test('未配置站点时显示清晰的添加入口', async ({ page }, testInfo) => {
+  await mockApi(page, { sites: [] });
+  await page.goto('/');
+  await expect(page.getByText('开始监控你的第一个站点')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('dashboard-empty.png'), fullPage: true });
+  await page.getByRole('button', { name: '添加站点', exact: true }).click();
+  await expect(page.getByLabel('站点名称')).toBeVisible();
 });

@@ -87,6 +87,18 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
     return saved, webhook
 
 
+def save_global_webhook(webhook: str) -> str:
+    """Persist the shared WeCom webhook without requiring site data."""
+    from monitor.models import GlobalSettings
+
+    value = str(webhook or '').strip()
+    settings = GlobalSettings.get()
+    if settings.webhook != value:
+        settings.webhook = value
+        settings.save(update_fields=['webhook'])
+    return value
+
+
 # ── Upstream sessions ──────────────────────────────────────────────────────
 
 def load_upstream_sessions() -> dict:
