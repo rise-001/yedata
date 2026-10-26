@@ -123,8 +123,12 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await page.goto('/');
   const rows = page.locator('.overview-table tbody tr');
   await expect(rows).toHaveCount(5);
-  await expect(page.getByText('1,280.36')).toBeVisible();
-  await expect(page.getByText('4.50')).toBeVisible();
+  await expect(rows.getByText('1,280.36')).toBeVisible();
+  await expect(rows.getByText('4.50')).toBeVisible();
+  const totals = page.getByRole('region', { name: '可用余额总览' });
+  await expect(totals.locator('.balance-total').filter({ hasText: 'CNY' })).toContainText('1,280.36');
+  await expect(totals.locator('.balance-total').filter({ hasText: 'USD' })).toContainText('4.50');
+  await expect(totals).toContainText('已汇总 2 / 4 个启用站点');
   await page.getByRole('button', { name: /^需关注/ }).click();
   await expect(rows).toHaveCount(2);
   await expect(page.getByRole('button', { name: '备用 API', exact: true })).toBeVisible();

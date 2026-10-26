@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, X } from 'lucide-react';
+import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
 import { formatBalance, formatInterval, formatTime, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
@@ -79,11 +79,20 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
   const attention = statuses.filter((status) => ['warning', 'failed'].includes(status.kind)).length;
   const enabled = sites.filter((site) => site.enabled).length;
   const pending = statuses.filter((status) => status.kind === 'pending').length;
+  const balanceTotals = new Map();
+  let countedSites = 0;
+  for (const site of sites) {
+    const result = results[site.id];
+    if (!site.enabled || !result?.ok || result.balance == null || !Number.isFinite(Number(result.balance))) continue;
+    const currency = String(result.currency || site.currency || '').trim() || '未标注币种';
+    balanceTotals.set(currency, (balanceTotals.get(currency) || 0) + Number(result.balance));
+    countedSites += 1;
+  }
   const summary = [
-    { title: '监控站点', value: sites.length, hint: '所有已配置的监控站点', label: '站点总览', Icon: Globe2, kind: 'total' },
-    { title: '正常余额', value: healthy, hint: '余额高于预警阈值', label: '余额充足', Icon: CircleCheck, kind: 'healthy' },
-    { title: '需要关注', value: attention, hint: '余额预警或检查失败', label: attention ? '建议及时处理' : '暂无异常', Icon: TriangleAlert, kind: 'attention' },
-    { title: '正在监控', value: enabled, hint: '已启用后台自动检查', label: '自动监控', Icon: Activity, kind: 'active' },
+    { title: '监控站点', value: sites.length, hint: '全部已配置站点', Icon: Globe2, kind: 'total' },
+    { title: '正常余额', value: healthy, hint: '余额高于预警阈值', Icon: CircleCheck, kind: 'healthy' },
+    { title: '需要关注', value: attention, hint: attention ? '低余额或查询异常' : '暂无余额与查询异常', Icon: TriangleAlert, kind: 'attention' },
+    { title: '正在监控', value: enabled, hint: '已启用自动检查', Icon: Activity, kind: 'active' },
   ];
   const filters = [
     { id: 'all', label: '全部站点', count: sites.length },
@@ -100,16 +109,26 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
   function clearFilters() { setQuery(''); setFilter('all'); }
 
   return <div className="dashboard-content">
-    <section className="overview-metrics" aria-label="监控统计">{summary.map(({ title, value, hint, label, Icon, kind }) =>
-      <article key={title} className={`overview-metric metric-${kind}`}>
-        <div className="metric-heading"><span>{title}</span><span className="metric-icon"><Icon size={19} strokeWidth={1.7} aria-hidden="true" /></span></div>
-        <div className="metric-value"><strong>{value}</strong><span>个站点</span></div>
-        <div className="metric-caption"><small>{hint}</small><span className="metric-label">{kind === 'active' && <i aria-hidden="true" />}{label}</span></div>
-      </article>)}
-    </section>
+    <div className="overview-summary">
+      <section className="balance-summary" aria-labelledby="balance-summary-title">
+        <div className="balance-summary-header"><span className="balance-summary-icon"><WalletCards size={22} strokeWidth={1.6} aria-hidden="true" /></span><span className="balance-summary-tag"><Layers3 size={13} aria-hidden="true" />按币种汇总</span></div>
+        <div className="balance-summary-heading"><span>ACCOUNT BALANCE</span><h2 id="balance-summary-title">可用余额总览</h2></div>
+        {balanceTotals.size > 0 ? <dl className={`balance-totals ${balanceTotals.size > 1 ? 'multiple-currencies' : ''}`}>
+          {[...balanceTotals].map(([currency, amount]) => <div className="balance-total" key={currency}><dt>{currency}</dt><dd>{formatBalance(amount)}</dd></div>)}
+        </dl> : <div className="balance-summary-empty"><strong>—</strong><p>{enabled ? '等待站点返回余额数据' : '启用站点后，在这里掌握总余额'}</p></div>}
+        <div className="balance-summary-footer"><span>已汇总 <strong>{countedSites}</strong> / {enabled} 个启用站点</span><span><ShieldCheck size={14} aria-hidden="true" />仅统计查询成功的站点</span></div>
+      </section>
+      <section className="overview-metrics" aria-label="监控统计">{summary.map(({ title, value, hint, Icon, kind }) =>
+        <article key={title} className={`overview-metric metric-${kind}`}>
+          <div className="metric-heading"><span>{title}</span><span className="metric-icon"><Icon size={19} strokeWidth={1.7} aria-hidden="true" /></span></div>
+          <div className="metric-value"><strong>{value}</strong><span>个站点</span></div>
+          <div className="metric-caption"><span className="metric-dot" aria-hidden="true" /><small>{hint}</small></div>
+        </article>)}
+      </section>
+    </div>
 
     <section className="overview-panel" aria-labelledby="balance-panel-title">
-      <header className="overview-panel-header"><div className="overview-panel-title"><span className="panel-symbol"><Globe2 size={20} strokeWidth={1.7} aria-hidden="true" /></span><div><h2 id="balance-panel-title">网站余额</h2><p>余额与运行状态，尽在掌握。</p></div></div>
+      <header className="overview-panel-header"><div className="overview-panel-title"><span className="panel-symbol"><Globe2 size={20} strokeWidth={1.7} aria-hidden="true" /></span><div><h2 id="balance-panel-title">网站余额<span className="panel-site-count">{sites.length}</span></h2><p>集中查看每个站点的余额与运行状态</p></div></div>
         {sites.length > 0 && <button className="primary-button dashboard-add" onClick={onAdd}><Plus size={16} aria-hidden="true" />添加站点</button>}
       </header>
       {!sites.length ? <div className="overview-empty"><span className="overview-empty-icon"><Globe2 size={32} strokeWidth={1.4} aria-hidden="true" /></span><h3>开始监控你的第一个站点</h3><p>添加网站和认证信息，<br />在这里统一查看余额、接收预警。</p><button className="primary-button" onClick={onAdd}><Plus size={16} aria-hidden="true" />添加站点</button><small><ShieldCheck size={14} aria-hidden="true" />凭据仅保存在服务器端</small></div>
