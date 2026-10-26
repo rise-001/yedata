@@ -106,6 +106,15 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
     const matchesFilter = filter === 'all' || (filter === 'attention' ? ['warning', 'failed'].includes(kind) : kind === filter);
     return matchesFilter && (!search || `${site.name} ${site.baseUrl}`.toLocaleLowerCase().includes(search));
   });
+  const visibleBalanceTotals = new Map();
+  let visibleCountedSites = 0;
+  for (const site of visibleSites) {
+    const result = results[site.id];
+    if (!site.enabled || !result?.ok || result.balance == null || !Number.isFinite(Number(result.balance))) continue;
+    const currency = String(result.currency || site.currency || '').trim() || '未标注币种';
+    visibleBalanceTotals.set(currency, (visibleBalanceTotals.get(currency) || 0) + Number(result.balance));
+    visibleCountedSites += 1;
+  }
   function clearFilters() { setQuery(''); setFilter('all'); }
 
   return <div className="dashboard-content">
@@ -151,7 +160,14 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
                   <td className="overview-checked" data-label="最近检查"><time dateTime={result?.checkedAt || undefined}>{formatTime(result?.checkedAt)}</time><small><RefreshCw size={11} aria-hidden="true" />每 {formatInterval(site.intervalSeconds)}检查</small></td>
                   <td className="overview-action" data-label="操作"><button className="overview-open" onClick={() => onOpen(site)}>进入网站 <ArrowUpRight size={16} aria-hidden="true" /></button></td>
                 </tr>;
-              })}</tbody></table></div>}
+              })}</tbody>
+              {visibleSites.length > 0 && <tfoot><tr className="overview-total-row"><th scope="row">合计余额</th><td colSpan={5}><div className="overview-total-content">
+                <div className="overview-total-amounts">{[...visibleBalanceTotals].length > 0
+                  ? [...visibleBalanceTotals].map(([currency, amount]) => <span className="overview-total-amount" key={currency}><small>{currency}</small><strong>{formatBalance(amount)}</strong></span>)
+                  : <strong className="overview-total-empty">暂无可汇总余额</strong>}</div>
+                <span className="overview-total-caption">已汇总 {visibleCountedSites} 个启用且查询成功的站点</span>
+              </div></td></tr></tfoot>}
+              </table></div>}
           <footer className="overview-panel-footer"><span role="status">显示 {visibleSites.length} / {sites.length} 个站点{pending > 0 && <span className="overview-pending"> · {pending} 个待检查</span>}</span><span><RefreshCw size={12} aria-hidden="true" />每 15 秒同步检查结果</span></footer>
         </>}
     </section>

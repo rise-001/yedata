@@ -328,6 +328,17 @@ td small { font-size: 9px; }
 .overview-table .overview-action { text-align: right; padding-right: 28px; }
 .overview-open { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 8px 11px; border: 1px solid #dfe8dc; border-radius: 9px; color: #54744f; background: #fff; font-size: 11px; white-space: nowrap; }
 .overview-open:hover { color: #206247; background: #f2f7f2; border-color: #c6d9c9; }
+.overview-table tfoot { background: #f4f7f1; }
+.overview-table .overview-total-row th, .overview-table .overview-total-row td { padding: 19px 16px; border-top: 1px solid #e3ebdf; border-bottom: 0; background: #f4f7f1; }
+.overview-table .overview-total-row th { padding-left: 28px; color: #35533b; font-size: 13px; font-weight: 650; text-align: left; white-space: nowrap; }
+.overview-table .overview-total-row td { padding-right: 28px; }
+.overview-total-content { display: flex; align-items: center; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; }
+.overview-total-amounts { display: flex; align-items: baseline; gap: 20px 28px; flex-wrap: wrap; }
+.overview-total-amount { display: inline-flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.overview-total-amount small { color: #73896d; font-size: 11px; font-weight: 600; }
+.overview-total-amount strong { color: #234932; font-size: 21px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.overview-total-empty { color: #82917f; font-size: 13px; font-weight: 500; }
+.overview-total-caption { color: #758775; font-size: 11px; line-height: 1.6; }
 .row-disabled .site-avatar, .row-disabled .overview-site-info, .row-disabled .overview-balance, .row-disabled .overview-threshold { opacity: .55; }
 .overview-panel-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 28px; border-top: 1px solid #edf1e9; color: #7b8d7b; font-size: 11px; }
 .overview-panel-footer > span:last-child { display: flex; align-items: center; gap: 6px; }
@@ -412,6 +423,15 @@ td small { font-size: 9px; }
   .overview-table { display: block; min-width: 0; white-space: normal; }
   .overview-table tbody { display: grid; gap: 12px; }
   .overview-table thead { display: none; }
+  .overview-table tfoot { display: block; margin-top: 12px; border: 1px solid #dfe8db; border-radius: 13px; overflow: hidden; }
+  .overview-table .overview-total-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .overview-table .overview-total-row th { padding: 15px 15px 4px; border: 0; background: #f4f7f1; font-size: 12px; }
+  .overview-table .overview-total-row td { padding: 5px 15px 15px; border: 0; background: #f4f7f1; }
+  .overview-total-content { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .overview-total-amounts { gap: 8px 19px; }
+  .overview-total-amount { gap: 7px; }
+  .overview-total-amount strong { font-size: 20px; }
+  .overview-total-caption { font-size: 10px; }
   .overview-table .overview-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: #fff; border: 1px solid #e2eae0; border-radius: 13px; overflow: hidden; }
   .overview-table td { display: flex; align-items: flex-start; justify-content: center; flex-direction: column; padding: 15px 14px; min-width: 0; border: 0; border-top: 1px solid #f0f3ef; background: transparent; }
   .overview-table tbody tr:first-child td { border-top: 1px solid #f0f3ef; }

@@ -129,8 +129,14 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await expect(totals.locator('.balance-total').filter({ hasText: 'CNY' })).toContainText('1,280.36');
   await expect(totals.locator('.balance-total').filter({ hasText: 'USD' })).toContainText('4.50');
   await expect(totals).toContainText('已汇总 2 / 4 个启用站点');
+  const totalRow = page.locator('.overview-total-row');
+  await expect(totalRow).toContainText('合计余额');
+  await expect(totalRow).toContainText('1,280.36');
+  await expect(totalRow).toContainText('4.50');
+  await expect(totalRow).toContainText('已汇总 2 个启用且查询成功的站点');
   await page.getByRole('button', { name: /^需关注/ }).click();
   await expect(rows).toHaveCount(2);
+  await expect(totalRow).toContainText('已汇总 1 个启用且查询成功的站点');
   await expect(page.getByRole('button', { name: '备用 API', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '团队工作空间', exact: true })).toBeVisible();
   await page.getByRole('searchbox', { name: '搜索站点' }).fill('backup.example.com');
