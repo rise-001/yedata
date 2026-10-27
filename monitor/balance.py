@@ -4,6 +4,7 @@ Mirrors getBalance, checkAndNotify, sendWecom, runDailyReport from server.js.
 """
 import logging
 import time
+from math import isfinite
 from datetime import datetime
 from datetime import timezone as dt_timezone
 
@@ -355,18 +356,28 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
 # ── WeCom notification ──────────────────────────────────────────────────────
 
 def send_wecom(webhook: str, content: str) -> None:
-    resp = requests.post(
-        webhook,
-        json={'msgtype': 'markdown', 'markdown': {'content': content}},
-        timeout=10,
-    )
-    result = {}
+    try:
+        resp = requests.post(
+            webhook,
+            json={'msgtype': 'markdown', 'markdown': {'content': content}},
+            timeout=10,
+            allow_redirects=False,
+        )
+    except requests.Timeout:
+        raise ValueError('企业微信请求超时，请检查服务器网络后重试') from None
+    except requests.RequestException:
+        # requests exceptions can contain the URL, including the secret key.
+        raise ValueError('无法连接企业微信，请检查服务器网络和 Webhook 地址') from None
+    if not resp.ok or 300 <= resp.status_code < 400:
+        raise ValueError(f'企业微信返回 HTTP {resp.status_code}')
     try:
         result = resp.json()
-    except Exception:
-        pass
-    if not resp.ok or (result.get('errcode') not in (None, 0)):
-        raise ValueError(result.get('errmsg') or f'企业微信返回 HTTP {resp.status_code}')
+    except ValueError:
+        raise ValueError('企业微信未返回有效 JSON，请检查 Webhook 地址或服务器代理') from None
+    if not isinstance(result, dict) or type(result.get('errcode')) is not int:
+        raise ValueError('企业微信响应缺少有效 errcode，无法确认通知是否发送成功')
+    if result['errcode'] != 0:
+        raise ValueError(f'企业微信错误 {result["errcode"]}：{result.get("errmsg") or "发送失败"}')
 
 
 # ── Check + notify ──────────────────────────────────────────────────────────
@@ -380,17 +391,27 @@ def check_and_notify(site_input: dict) -> dict:
 
     notified = False
     notification_error = ''
+    notification_message = ''
 
     try:
         threshold_f = float(threshold)
+        if not isfinite(threshold_f):
+            threshold_f = None
     except (TypeError, ValueError):
         threshold_f = None
 
-    enabled = (site_input.get('notifyEnabled', True) is not False
-               and webhook and threshold_f is not None)
-
-    if enabled and result['balance'] <= threshold_f:
-        key = f"{webhook}|{result.get('email') or site_input.get('email') or site_input.get('baseUrl', '')}"
+    if site_input.get('notifyEnabled', True) is False:
+        notification_message = '未发送：该站点未启用余额预警'
+    elif not webhook:
+        notification_message = '未发送：请先配置全局企业微信 Webhook'
+    elif threshold_f is None:
+        notification_message = '未发送：请先设置有效的预警阈值'
+    elif result['balance'] > threshold_f:
+        notification_message = '未发送：余额高于预警阈值'
+    else:
+        site_key = site_input.get('id') or site_input.get('baseUrl', '')
+        account_key = result.get('email') or site_input.get('email', '')
+        key = f'{webhook}|{site_key}|{account_key}'
         previous = state.alerts.get(key, 0)
         six_hours = 6 * 3600
         if time.time() - previous > six_hours:
@@ -410,11 +431,15 @@ def check_and_notify(site_input: dict) -> dict:
                 send_wecom(webhook, msg)
                 state.alerts[key] = time.time()
                 notified = True
+                notification_message = '企业微信已确认接收预警'
             except Exception as exc:
                 notification_error = str(exc)
                 logger.error('WeCom balance alert failed for %s: %s', site_name, exc)
+        else:
+            notification_message = '未发送：该站点账户已在 6 小时内发送过预警'
 
-    return {**result, 'notified': notified, 'notificationError': notification_error}
+    return {**result, 'notified': notified, 'notificationError': notification_error,
+            'notificationMessage': notification_message}
 
 
 # ── Daily usage snapshots ───────────────────────────────────────────────────
@@ -479,12 +504,14 @@ def usage_for_day(site_id: str, day_key: str) -> float | None:
 
 # ── Daily report ────────────────────────────────────────────────────────────
 
-def run_daily_report() -> None:
-    enabled_sites = [s for s in state.saved_sites if s.get('enabled', True) is not False]
+def run_daily_report(*, timezone: str | None = None) -> bool:
+    enabled_sites = [s for s in state.saved_sites
+                     if s.get('enabled', True) is not False
+                     and (timezone is None or (s.get('timezone') or 'Asia/Shanghai') == timezone)]
     if not enabled_sites or not state.global_webhook:
-        return
+        return False
 
-    tz = enabled_sites[0].get('timezone', 'Asia/Shanghai')
+    tz = timezone or enabled_sites[0].get('timezone') or 'Asia/Shanghai'
     today = day_key_of(tz)
     yesterday = shift_day_key(today, -1)
 
@@ -548,5 +575,7 @@ def run_daily_report() -> None:
     try:
         send_wecom(state.global_webhook, content)
         logger.info('Daily balance report sent for %d site(s)', len(enabled_sites))
+        return True
     except Exception as exc:
         logger.error('Daily balance report failed: %s', exc)
+        return False

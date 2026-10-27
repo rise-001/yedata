@@ -13,6 +13,38 @@ logger = logging.getLogger(__name__)
 _scheduler = None
 
 
+def _run_daily_reports(now: float) -> None:
+    from monitor import state
+    from monitor.balance import run_daily_report
+    from monitor.time_utils import local_parts
+
+    tz_set = {(s.get('timezone') or 'Asia/Shanghai')
+              for s in state.saved_sites if s.get('enabled', True) is not False}
+    if state.global_webhook:
+        for tz in tz_set:
+            parts = local_parts(tz)
+            # Catch up after a restart or an outage, until the local day ends.
+            if int(parts['hour']) < settings.DAILY_REPORT_HOUR:
+                continue
+            day = f'{parts["year"]}-{parts["month"]}-{parts["day"]}'
+            if state.daily_report_sent.get(tz) == day:
+                continue
+            last_attempt = state.daily_report_last_attempt.get(tz)
+            if last_attempt is not None and now - last_attempt < 60:
+                continue
+            state.daily_report_last_attempt[tz] = now
+            try:
+                if run_daily_report(timezone=tz):
+                    state.daily_report_sent[tz] = day
+            except Exception as exc:
+                logger.error('Daily balance report failed: %s', exc)
+
+    for cache in (state.daily_report_sent, state.daily_report_last_attempt):
+        for tz in list(cache):
+            if tz not in tz_set:
+                del cache[tz]
+
+
 def start():
     global _scheduler
     if _scheduler is not None:
@@ -26,10 +58,7 @@ def start():
 
     from monitor import state
     from monitor.storage import load_sites, load_upstream_sessions, load_daily_usage
-    from monitor.balance import check_and_notify, record_daily_usage, run_daily_report
     from monitor.adapters import normalize_site, with_saved_secrets
-    from monitor.time_utils import local_parts, day_key_of
-    from monitor.storage import save_upstream_sessions
 
     # Load persistent state on startup.
     saved, webhook = load_sites()
@@ -44,7 +73,6 @@ def start():
     def tick():
         now = time.time()
         concurrency = settings.CHECK_CONCURRENCY
-        daily_hour = settings.DAILY_REPORT_HOUR
 
         # Per-site scheduled checks.
         running_count = len(state.scheduled_running)
@@ -62,26 +90,7 @@ def start():
                 _run_site(site, sid)
                 running_count += 1
 
-        # Daily report — once per hour per timezone.
-        tz_set = {(s.get('timezone') or 'Asia/Shanghai')
-                  for s in state.saved_sites if s.get('enabled', True) is not False}
-        for tz in tz_set:
-            parts = local_parts(tz)
-            if int(parts['hour']) != daily_hour:
-                continue
-            day = f'{parts["year"]}-{parts["month"]}-{parts["day"]}'
-            if state.daily_report_sent.get(tz) == day:
-                continue
-            state.daily_report_sent[tz] = day
-            try:
-                run_daily_report()
-            except Exception as exc:
-                logger.error('Daily balance report failed: %s', exc)
-
-        # Prune stale daily_report_sent entries.
-        for tz in list(state.daily_report_sent):
-            if tz not in tz_set:
-                del state.daily_report_sent[tz]
+        _run_daily_reports(now)
 
         # Prune expired admin sessions.
         for token in list(state.sessions):

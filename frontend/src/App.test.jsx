@@ -18,7 +18,7 @@ function mockApi(config = {}) {
       return response({ ok: true, data: { sites: state.sites, settings: state.settings } });
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
-    if (path === 'check-many') return response({ ok: true, data: body.sites.map((site) => ({ siteId: site.id, ok: true, balance: 0, currency: 'CNY', checkedAt: '2026-10-21T02:00:00Z' })) });
+    if (path === 'check-many') return response({ ok: true, data: body.sites.map((site) => ({ siteId: site.id, ok: true, balance: 0, currency: 'CNY', checkedAt: '2026-10-21T02:00:00Z', ...state.checkResult })) });
     return response({ ok: true });
   });
   vi.stubGlobal('fetch', fetch);
@@ -127,6 +127,29 @@ describe('React 页面流程', () => {
     await user.click(screen.getByRole('button', { name: '测试通知' }));
     expect(await screen.findByText('测试通知已发送')).toBeInTheDocument();
     expect(JSON.parse(fetch.mock.calls.find(([url]) => url === '/api/notify-test')[1].body)).toEqual({ webhook: '' });
+  });
+
+  it('概览直接显示通知失败，即使余额查询成功', async () => {
+    mockApi({ results: { alpha: { ok: true, balance: 10, notificationError: '企业微信错误 93000：invalid webhook url' } } });
+    render(<App />);
+    expect(await screen.findByText('通知失败：企业微信错误 93000：invalid webhook url')).toBeInTheDocument();
+    expect(screen.getAllByText('10.00').length).toBeGreaterThan(0);
+  });
+
+  it('手动检查明确提示通知发送失败', async () => {
+    mockApi({ checkResult: { notificationError: '企业微信请求超时' } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '检查全部' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 个通知发送失败');
+    expect(screen.getByText('通知失败：企业微信请求超时')).toBeInTheDocument();
+  });
+
+  it('站点详情显示未触发通知的原因', async () => {
+    mockApi({ results: { alpha: { ok: true, balance: 10, notificationMessage: '未发送：请先配置全局企业微信 Webhook' } } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    expect(screen.getByText('未发送：请先配置全局企业微信 Webhook')).toBeInTheDocument();
   });
 
   it('会话过期后回到登录页并清除工作区', async () => {

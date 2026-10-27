@@ -41,7 +41,7 @@ export function SiteCard({ site, result, index, busy, checking, selected, onChan
     {expanded && <div id={`fields-${site.id}`}>
       <div className="site-result"><div><small>可用余额</small><strong>{result?.ok ? formatBalance(result.balance) : '—'} <em>{result?.currency || site.currency}</em></strong><small>{result?.displayName || result?.email || '等待连接'}</small></div>
         <div><small>最近状态</small><p>{!site.enabled ? '监控已停止' : result?.ok ? result.notified ? '已发送预警' : siteStatus(site, result).text : result?.message || '等待检查'}</p>
-          <small className={result?.notificationError ? 'error-text' : ''}>{result?.notificationError ? `通知失败：${result.notificationError}` : formatTime(result?.checkedAt)}</small></div></div>
+          <small className={result?.notificationError ? 'error-text' : ''}>{result?.notificationError ? `通知失败：${result.notificationError}` : result?.notificationMessage || formatTime(result?.checkedAt)}</small></div></div>
       <fieldset disabled={busy}>
         <div className="fields-grid">
           {field('name', '站点名称', { maxLength: 80 })}
@@ -156,7 +156,7 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
                   <td className="overview-site" data-label="站点"><span className={`site-avatar avatar-${site.siteType}`} aria-hidden="true">{siteName.trim().charAt(0).toLocaleUpperCase()}</span><div className="overview-site-info"><button className="overview-site-link" onClick={() => onEdit(site.id)}>{siteName}</button><span className="overview-site-meta"><span className="site-type-tag">{typeNames[site.siteType] || '自动识别'}</span><span className="overview-site-url" title={site.baseUrl}>{site.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span></span></div></td>
                   <td className="overview-balance" data-label="可用余额"><strong>{result?.ok ? formatBalance(result.balance) : '—'}</strong><span>{currency || '—'}</span></td>
                   <td className="overview-threshold" data-label="预警阈值"><span>{formatBalance(site.threshold)}</span><small>{currency || '—'}</small></td>
-                  <td className="overview-status" data-label="监控状态"><Status site={site} result={result} checking={checkingIds.includes(site.id)} />{site.enabled && result?.ok === false && <small className="overview-error" title={result.message}>{result.message || '请检查站点配置'}</small>}</td>
+                  <td className="overview-status" data-label="监控状态"><Status site={site} result={result} checking={checkingIds.includes(site.id)} />{site.enabled && result?.ok === false && <small className="overview-error" title={result.message}>{result.message || '请检查站点配置'}</small>}{site.enabled && result?.notificationError && <small className="overview-error" title={result.notificationError}>通知失败：{result.notificationError}</small>}</td>
                   <td className="overview-checked" data-label="最近检查"><time dateTime={result?.checkedAt || undefined}>{formatTime(result?.checkedAt)}</time><small><RefreshCw size={11} aria-hidden="true" />每 {formatInterval(site.intervalSeconds)}检查</small></td>
                   <td className="overview-action" data-label="操作"><button className="overview-open" onClick={() => onOpen(site)}>进入网站 <ArrowUpRight size={16} aria-hidden="true" /></button></td>
                 </tr>;

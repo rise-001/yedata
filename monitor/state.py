@@ -29,6 +29,7 @@ upstream_login_blocked: dict[str, float] = {}    # blocked until epoch
 
 # ── Daily report dedup  {timezone: day_key} ──────────────────────────────
 daily_report_sent: dict[str, str] = {}
+daily_report_last_attempt: dict[str, float] = {}
 
 # ── Daily usage snapshots  {site_id: {day_key: float}} ───────────────────
 daily_usage: dict[str, dict[str, float]] = {}

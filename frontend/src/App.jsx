@@ -133,7 +133,9 @@ function Workspace({ onLogout }) {
       const { data } = await send('check-many', 'POST', { sites: saved.filter((site) => ids.includes(site.id)).map(serializeSite) });
       setResults((current) => mergeResults(current, Object.fromEntries(data.map((result) => [result.siteId, result]))));
       const failed = data.filter((result) => !result.ok).length;
-      notify(failed ? `${data.length - failed} 个完成，${failed} 个失败` : `${data.length} 个站点检查完成`, failed > 0);
+      const notificationFailed = data.filter((result) => result.notificationError).length;
+      const message = failed ? `${data.length - failed} 个完成，${failed} 个失败` : `${data.length} 个站点检查完成`;
+      notify(notificationFailed ? `${message}，${notificationFailed} 个通知发送失败，请查看站点详情` : message, failed > 0 || notificationFailed > 0);
     });
   }
 
