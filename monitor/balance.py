@@ -13,7 +13,7 @@ from django.conf import settings
 
 from monitor import state
 from monitor.adapters import (
-    infer_adapter, sanitize_cookie, site_config, upstream_fingerprint, url_for,
+    infer_adapter, is_newapi_site, sanitize_cookie, site_config, upstream_fingerprint, url_for,
 )
 from monitor.storage import save_upstream_sessions, save_daily_usage
 from monitor.time_utils import day_key_of, shift_day_key, local_parts
@@ -66,7 +66,7 @@ def fetch_json(url: str, *, method: str = 'GET', headers: dict | None = None,
 def get_token_usage(site: dict):
     """Fetch New API token usage using the token saved for a site."""
     cfg = site_config(site)
-    if cfg.get('siteType') != 'newapi':
+    if not is_newapi_site(cfg):
         raise ValueError('消耗查询仅支持 New API 站点')
     token = str(cfg.get('usageToken') or '').strip()
     if not token:

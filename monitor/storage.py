@@ -6,7 +6,7 @@ so all callers in balance.py, scheduler.py, and views.py work unchanged.
 """
 import logging
 
-from monitor.adapters import normalize_site
+from monitor.adapters import is_newapi_site, looks_like_usage_token, normalize_site
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,11 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
         obj.base_url = str(norm.get('baseUrl') or '')
         obj.site_type = str(norm.get('siteType') or '')
         obj.email = str(norm.get('email') or '')
+        misplaced_usage_token = str(norm.get('usagePath') or '').strip()
+        if is_newapi_site(norm) and looks_like_usage_token(misplaced_usage_token):
+            norm['usageToken'] = norm.get('usageToken') or misplaced_usage_token
+            norm['usagePath'] = ''
+
         # Only overwrite secrets when a non-empty value is provided.
         for js_key, py_attr in (
             ('password', 'password'), ('token', 'token'),

@@ -49,6 +49,11 @@ class TokenUsageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '消耗查询 API Key'):
             balance.get_token_usage({**SITE, 'usageToken': ''})
 
+    def test_auto_detected_newapi_site_can_query_usage(self):
+        site = {**SITE, 'siteType': 'auto', 'mePath': '/api/user/self'}
+        with patch.object(balance, 'fetch_json', return_value={}):
+            self.assertEqual(balance.get_token_usage(site)['usedQuota'], None)
+
     def test_usage_accepts_key_with_bearer_prefix(self):
         with patch.object(balance, 'fetch_json', return_value={}) as fetch:
             balance.get_token_usage({**SITE, 'usageToken': 'Bearer sk-prefixed'})

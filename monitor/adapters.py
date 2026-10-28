@@ -27,6 +27,18 @@ SITE_ADAPTERS = {
 SECRET_FIELDS = ('password', 'token', 'sessionCookie', 'usageToken')
 
 
+def looks_like_usage_token(value) -> bool:
+    text = str(value or '').strip()
+    if text.lower().startswith('bearer '):
+        text = text[7:].strip()
+    return text.lower().startswith('sk-') and len(text) > 10
+
+
+def is_newapi_site(site: dict) -> bool:
+    return (site.get('siteType') == 'newapi' or site.get('mePath') == '/api/user/self'
+            or site.get('balanceField') == 'quota')
+
+
 def normalize_site(site: dict) -> dict:
     result = dict(site)
     result['id'] = str(site.get('id') or secrets.token_hex(8))
@@ -67,10 +79,13 @@ def site_config(site: dict) -> dict:
 
 def public_site(site: dict) -> dict:
     result = {k: v for k, v in site.items() if k not in SECRET_FIELDS}
+    misplaced_usage_token = is_newapi_site(site) and looks_like_usage_token(site.get('usagePath'))
+    if misplaced_usage_token:
+        result['usagePath'] = ''
     result['hasPassword'] = bool(site.get('password'))
     result['hasToken'] = bool(site.get('token'))
     result['hasSessionCookie'] = bool(site.get('sessionCookie'))
-    result['hasUsageToken'] = bool(site.get('usageToken'))
+    result['hasUsageToken'] = bool(site.get('usageToken')) or misplaced_usage_token
     return result
 
 

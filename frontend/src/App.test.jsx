@@ -106,7 +106,7 @@ describe('React 页面流程', () => {
     expect(screen.getByLabelText('New-Api-User ID')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /高级设置/ }));
     expect(screen.getByLabelText('余额路径')).toHaveValue('/api/user/self');
-    expect(screen.getByLabelText('用量接口')).toHaveValue('');
+    expect(screen.queryByLabelText('用量接口')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('认证方式'), 'cookie');
     expect(screen.getByLabelText('登录 Cookie')).toBeInTheDocument();
     expect(screen.queryByLabelText('New-Api-User ID')).not.toBeInTheDocument();
@@ -127,6 +127,15 @@ describe('React 页面流程', () => {
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
     const call = fetch.mock.calls.find(([url]) => url === '/api/usage/token');
     expect(JSON.parse(call[1].body)).toEqual({ siteId: 'alpha' });
+  });
+
+  it('New API 不再显示容易误填 Key 的用量接口', async () => {
+    mockApi({ sites: [{ ...initialSite, siteType: 'newapi', hasUsageToken: true }] });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: /高级设置/ }));
+    expect(screen.getByLabelText('消耗查询 API Key')).toBeInTheDocument();
+    expect(screen.queryByLabelText('用量接口')).not.toBeInTheDocument();
   });
 
   it('停用站点时保存配置并禁止手动检查', async () => {

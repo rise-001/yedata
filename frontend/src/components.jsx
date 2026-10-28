@@ -24,6 +24,8 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
   const field = (key, label, props = {}) => <Field label={label} value={site[key]} onChange={update(key)} {...props} />;
   const showUserId = site.authMode !== 'cookie' && (site.siteType === 'newapi' || site.authMode === 'token'
     || (site.siteType === 'auto' && (site.mePath === '/api/user/self' || site.balanceField === 'quota')));
+  const isNewApi = site.siteType === 'newapi' || (site.siteType === 'auto'
+    && (site.mePath === '/api/user/self' || site.balanceField === 'quota'));
   const secretPlaceholder = (key) => site[`has${key[0].toUpperCase()}${key.slice(1)}`]
     ? '已安全保存，留空保持不变' : '输入凭据';
   const usage = usageResult?.data;
@@ -37,7 +39,7 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
         <button className="text-button" aria-expanded={expanded} aria-controls={`fields-${site.id}`} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开'}</button>
         <button className="text-button" disabled={busy} onClick={() => onOpen(site)}>进入 <ExternalLink size={12} aria-hidden="true" /></button>
         <button className="text-button" disabled={busy || !site.enabled} onClick={() => onCheck(site.id)}><RefreshCw size={12} aria-hidden="true" />检查</button>
-        {site.siteType === 'newapi' && <button className="text-button" disabled={busy || (!site.usageToken && !site.hasUsageToken)} onClick={() => onUsage(site)}><Activity size={12} aria-hidden="true" />{usageBusy ? '查询中…' : '消耗查询'}</button>}
+        {isNewApi && <button className="text-button" disabled={busy || (!site.usageToken && !site.hasUsageToken)} onClick={() => onUsage(site)}><Activity size={12} aria-hidden="true" />{usageBusy ? '查询中…' : '消耗查询'}</button>}
         <button className="text-button" disabled={busy} onClick={() => onToggle(site)}><Power size={12} aria-hidden="true" />{site.enabled ? '停用' : '启用'}</button>
         <button className="text-button danger" disabled={busy} onClick={() => onDelete(site)}><Trash2 size={12} aria-hidden="true" />删除</button>
       </div>
@@ -46,7 +48,7 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
       <div className="site-result"><div><small>可用余额</small><strong>{result?.ok ? formatBalance(result.balance) : '—'} <em>{result?.currency || site.currency}</em></strong><small>{result?.displayName || result?.email || '等待连接'}</small></div>
         <div><small>最近状态</small><p>{!site.enabled ? '监控已停止' : result?.ok ? result.notified ? '已发送预警' : siteStatus(site, result).text : result?.message || '等待检查'}</p>
           <small className={result?.notificationError ? 'error-text' : ''}>{result?.notificationError ? `通知失败：${result.notificationError}` : result?.notificationMessage || formatTime(result?.checkedAt)}</small></div></div>
-      {site.siteType === 'newapi' && usageResult && <section className={`token-usage ${usageResult.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
+      {isNewApi && usageResult && <section className={`token-usage ${usageResult.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
         <div><strong>{usage?.name || '令牌消耗'}</strong><small>{usageResult.ok ? '刚刚查询' : usageResult.message}</small></div>
         {usageResult.ok && <dl className="token-usage-grid">
           <div><dt>已用额度</dt><dd>{quota(usage.usedQuota)}</dd></div>
@@ -67,13 +69,13 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
           {site.authMode === 'password' && <>{field('email', '账号 / 邮箱', { autoComplete: 'off' })}{field('password', '密码', { type: 'password', autoComplete: 'new-password', placeholder: secretPlaceholder('password') })}</>}
           {site.authMode === 'token' && field('token', '访问令牌 / Bearer Token', { type: 'password', autoComplete: 'off', placeholder: secretPlaceholder('token'), wide: true })}
           {site.authMode === 'cookie' && <Field label="登录 Cookie" wide><textarea rows={3} value={site.sessionCookie} autoComplete="off" spellCheck={false} onChange={(event) => update('sessionCookie')(event.target.value)} placeholder={secretPlaceholder('sessionCookie')} /></Field>}
-          {site.siteType === 'newapi' && field('usageToken', '消耗查询 API Key', { type: 'password', autoComplete: 'off', placeholder: site.hasUsageToken ? '已安全保存，留空保持不变' : 'sk-...', wide: true })}
+          {isNewApi && field('usageToken', '消耗查询 API Key', { type: 'password', autoComplete: 'off', placeholder: site.hasUsageToken ? '已安全保存，留空保持不变' : 'sk-...', wide: true })}
           {field('threshold', '预警阈值', { type: 'number', min: 0, step: '0.01' })}
           {field('intervalSeconds', '查询间隔（秒）', { type: 'number', min: 30, max: 86400, step: 1 })}
           {field('balanceMultiplier', '余额倍率', { type: 'number', min: '0.000001', step: 'any' })}
           {advanced && <>
             <Field label="时区"><select value={site.timezone} onChange={(event) => update('timezone')(event.target.value)}>{[...new Set([site.timezone, 'Asia/Shanghai', 'UTC', 'Asia/Tokyo'])].map((zone) => <option key={zone}>{zone}</option>)}</select></Field>
-            {field('loginPath', '登录路径')}{field('mePath', '余额路径')}{field('usagePath', '用量接口', { placeholder: '留空表示不查询', wide: true })}
+            {field('loginPath', '登录路径')}{field('mePath', '余额路径')}{!isNewApi && field('usagePath', '用量接口', { placeholder: '留空表示不查询', wide: true })}
             {field('balanceField', '余额字段', { placeholder: 'auto / balance / quota' })}
             {field('balanceDivisor', '换算除数', { type: 'number', min: '0.000001', step: 'any', placeholder: '自动识别' })}
             {field('currency', '币种', { maxLength: 8, placeholder: '自动识别' })}
