@@ -33,6 +33,6 @@ describe('站点配置与余额状态', () => {
     expect(mergeResults({ alpha: recent }, { alpha: { ok: true, balance: 60, checkedAt: '2026-10-21T01:00:00Z' } }).alpha).toEqual(recent);
   });
   it('切换为 New API 时清除 Sub2 用量接口', () => {
-    expect({ ...presets.sub2, ...presets.newapi }).toMatchObject({ usagePath: '', balanceDivisor: 500000, currency: 'USD' });
+    expect({ ...presets.sub2, ...presets.newapi }).toMatchObject({ usagePath: '', balanceDivisor: 500000, currency: 'CNY' });
   });
 });

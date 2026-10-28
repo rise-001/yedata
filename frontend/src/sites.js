@@ -1,6 +1,6 @@
 export const presets = {
   sub2: { loginPath: '/api/v1/auth/login', mePath: '/api/v1/auth/me', usagePath: '/api/v1/usage/dashboard/trend', balanceField: 'balance', balanceDivisor: 1, currency: 'CNY' },
-  newapi: { loginPath: '/api/user/login', mePath: '/api/user/self', usagePath: '', balanceField: 'quota', balanceDivisor: 500000, currency: 'USD' },
+  newapi: { loginPath: '/api/user/login', mePath: '/api/user/self', usagePath: '', balanceField: 'quota', balanceDivisor: 500000, currency: 'CNY' },
 };
 
 export const typeNames = { auto: '自动识别', sub2: 'Sub2', newapi: 'New API', custom: '自定义' };

@@ -311,7 +311,7 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         multiplier = 1.0
 
     balance = raw_balance / divisor * multiplier
-    currency = str(cfg.get('currency') or '').strip() or ('USD' if balance_field == 'quota' else 'CNY')
+    currency = str(cfg.get('currency') or '').strip() or 'CNY'
 
     if not isinstance(balance, float) or balance != balance:  # NaN check
         raise ValueError('余额接口响应中没有有效的 balance 字段')

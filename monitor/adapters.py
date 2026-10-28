@@ -20,7 +20,7 @@ SITE_ADAPTERS = {
         'mePath': '/api/user/self',
         'balanceField': 'quota',
         'balanceDivisor': 500000,
-        'currency': 'USD',
+        'currency': 'CNY',
     },
 }
 
