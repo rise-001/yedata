@@ -19,7 +19,7 @@ function mockApi(config = {}) {
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
     if (path === 'check-many') return response({ ok: true, data: body.sites.map((site) => ({ siteId: site.id, ok: true, balance: 0, currency: 'CNY', checkedAt: '2026-10-21T02:00:00Z', ...state.checkResult })) });
-    if (path === 'usage/token') return response({ ok: true, data: state.usageResult || { data: { used_quota: 1200, remain_quota: 3800 } } });
+    if (path === 'usage/token') return response({ ok: true, data: state.usageResult || { name: 'production', usedQuota: 1200, remainingQuota: 3800, totalQuota: 5000, unlimitedQuota: false, expiresAt: -1, modelLimitsEnabled: true, modelLimits: ['gpt-4o'] } });
     return response({ ok: true });
   });
   vi.stubGlobal('fetch', fetch);
@@ -118,10 +118,13 @@ describe('React 页面流程', () => {
     const { fetch } = mockApi({ sites: [newApiSite] });
     const user = userEvent.setup();
     render(<App />); await openSiteSettings(user);
-    expect(screen.getByLabelText('消耗查询 Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+    expect(screen.getByLabelText('消耗查询 API Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
-    expect(await screen.findByText('令牌消耗')).toBeInTheDocument();
-    expect(screen.getByText(/"used_quota": 1200/)).toBeInTheDocument();
+    expect(await screen.findByText('production')).toBeInTheDocument();
+    expect(screen.getByText('1,200')).toBeInTheDocument();
+    expect(screen.getByText('3,800')).toBeInTheDocument();
+    expect(screen.getByText('永不过期')).toBeInTheDocument();
+    expect(screen.getByText('gpt-4o')).toBeInTheDocument();
     const call = fetch.mock.calls.find(([url]) => url === '/api/usage/token');
     expect(JSON.parse(call[1].body)).toEqual({ siteId: 'alpha' });
   });

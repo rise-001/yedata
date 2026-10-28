@@ -46,8 +46,15 @@ def fetch_json(url: str, *, method: str = 'GET', headers: dict | None = None,
         if data.get('success') is False:
             raise _api_error(data.get('message') or '接口返回失败', resp.status_code)
         code = data.get('code')
-        if code is not None and int(code) not in (0, 200):
-            raise _api_error(data.get('message') or '接口返回失败', resp.status_code)
+        if code is not None and code is not True:
+            if code is False:
+                raise _api_error(data.get('message') or '接口返回失败', resp.status_code)
+            try:
+                code_ok = int(code) in (0, 200)
+            except (TypeError, ValueError):
+                code_ok = False
+            if not code_ok:
+                raise _api_error(data.get('message') or '接口返回失败', resp.status_code)
 
     if not return_meta:
         return data
@@ -63,11 +70,58 @@ def get_token_usage(site: dict):
         raise ValueError('消耗查询仅支持 New API 站点')
     token = str(cfg.get('usageToken') or '').strip()
     if not token:
-        raise ValueError('请先在站点设置中填写消耗查询 Key 并保存')
+        raise ValueError('请先在站点设置中填写消耗查询 API Key 并保存')
 
-    user_id = str(cfg.get('newApiUserId') or '').strip() or '1'
-    headers = {'Authorization': token, 'new-api-user': user_id}
-    return fetch_json(url_for(cfg.get('baseUrl', ''), '/api/usage/token/'), headers=headers)
+    if token.lower().startswith('bearer '):
+        token = token[7:].strip()
+    raw = fetch_json(
+        url_for(cfg.get('baseUrl', ''), '/api/usage/token/'),
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    inner = raw.get('data') if isinstance(raw, dict) else None
+    data = inner if isinstance(inner, dict) else raw if isinstance(raw, dict) else {}
+
+    def number(*keys):
+        for key in keys:
+            value = data.get(key)
+            if value is not None and value != '':
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    used = number('used_quota', 'usedQuota', 'used')
+    remaining = number('remain_quota', 'remaining_quota', 'remainQuota', 'remaining')
+    total = number('total_quota', 'quota', 'totalQuota', 'total')
+    unlimited = bool(data.get('unlimited_quota') or data.get('unlimitedQuota'))
+    if total is None and used is not None and remaining is not None:
+        total = used + remaining
+    if remaining is None and total is not None and used is not None:
+        remaining = max(0, total - used)
+
+    expires = data.get('expired_time') or data.get('expiredTime') or data.get('expired_at') or data.get('expires_at')
+    try:
+        expires = int(expires) if expires not in (None, '') else None
+    except (TypeError, ValueError):
+        expires = None
+
+    model_limits = data.get('model_limits') or data.get('modelLimits') or []
+    if isinstance(model_limits, str):
+        model_limits = [item.strip() for item in model_limits.split(',') if item.strip()]
+    elif not isinstance(model_limits, list):
+        model_limits = []
+
+    return {
+        'name': data.get('name') or data.get('token_name') or data.get('tokenName') or '',
+        'usedQuota': used,
+        'remainingQuota': remaining,
+        'totalQuota': total,
+        'unlimitedQuota': unlimited,
+        'expiresAt': expires,
+        'modelLimitsEnabled': bool(data.get('model_limits_enabled') or data.get('modelLimitsEnabled')),
+        'modelLimits': model_limits,
+    }
 
 
 def _api_error(msg: str, status: int) -> Exception:

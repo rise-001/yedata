@@ -47,7 +47,7 @@ New API 查询会在填写 `New-Api-User ID` 时携带对应请求头。账号�
 
 已保存的网站密码、Bearer Token 和企业微信 Webhook 不会由后端返回到浏览器。设置页面只显示“已安全保存”，留空保存会保留原值；只有填写新值时才会覆盖服务器上的凭据。
 
-New API 站点还可以填写独立的“消耗查询 Key”。点击“消耗查询”时，服务端请求该站点的 `/api/usage/token/`，并将这个 Key 原样放入 `Authorization` 请求头；它与余额查询使用的账号、密码或访问令牌互相独立。`new-api-user` 默认使用 `1`，填写 `New-Api-User ID` 后使用填写的值。消耗查询 Key 只保存在服务端数据库，不会返回浏览器。
+New API 站点还可以填写独立的“消耗查询 API Key”（通常以 `sk-` 开头）。点击“消耗查询”时，服务端请求该站点的 `/api/usage/token/`，并按接口要求发送 `Authorization: Bearer <API Key>`；它与余额查询使用的账号、密码、控制台访问令牌和 `New-Api-User ID` 互相独立。页面会展示令牌名称、已用额度、剩余额度、总额度、到期时间和模型限制。API Key 只保存在服务端数据库，不会返回浏览器。
 
 余额看板和站点设置中的“进入网站”按钮会直接在新标签页打开该站点保存的接口地址。跨域网站的浏览器登录态无法由本服务通用注入；自动登录需要目标网站提供 SSO、一次性登录链接或专用换票接口。
 
@@ -110,7 +110,7 @@ docker compose -f docker-compose.django.yml logs --tail=100 balance-watch
 
 ```bash
 git log -1 --oneline
-docker compose -f docker-compose.django.yml exec balance-watch sh -c 'grep -R "消耗查询 Key" /app/frontend/dist/assets/*.js'
+docker compose -f docker-compose.django.yml exec balance-watch sh -c 'grep -R "消耗查询 API Key" /app/frontend/dist/assets/*.js'
 ```
 
 命令能找到内容但浏览器仍显示旧页面时，通常是浏览器、CDN 或 Nginx 缓存。请先使用 Ctrl+F5 强制刷新；若使用 CDN，再清理 CDN 页面缓存。应用会对 HTML 返回 `no-store`，避免后续升级继续加载旧入口。不要执行 `down -v`，否则会删除数据库和已保存凭据。
