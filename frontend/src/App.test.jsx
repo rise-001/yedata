@@ -19,6 +19,7 @@ function mockApi(config = {}) {
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
     if (path === 'check-many') return response({ ok: true, data: body.sites.map((site) => ({ siteId: site.id, ok: true, balance: 0, currency: 'CNY', checkedAt: '2026-10-21T02:00:00Z', ...state.checkResult })) });
+    if (path === 'usage/token') return response({ ok: true, data: state.usageResult || { data: { used_quota: 1200, remain_quota: 3800 } } });
     return response({ ok: true });
   });
   vi.stubGlobal('fetch', fetch);
@@ -110,6 +111,17 @@ describe('React 页面流程', () => {
     expect(screen.getByLabelText('登录 Cookie')).toBeInTheDocument();
     expect(screen.queryByLabelText('New-Api-User ID')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('访问令牌 / Bearer Token')).not.toBeInTheDocument();
+  });
+
+  it('New API 站点可以使用已保存令牌查询消耗', async () => {
+    const { fetch } = mockApi({ sites: [{ ...initialSite, siteType: 'newapi', newApiUserId: '1' }] });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    expect(await screen.findByText('令牌消耗')).toBeInTheDocument();
+    expect(screen.getByText(/"used_quota": 1200/)).toBeInTheDocument();
+    const call = fetch.mock.calls.find(([url]) => url === '/api/usage/token');
+    expect(JSON.parse(call[1].body)).toEqual({ siteId: 'alpha' });
   });
 
   it('停用站点时保存配置并禁止手动检查', async () => {

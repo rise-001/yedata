@@ -29,6 +29,7 @@ function Workspace({ onLogout }) {
   const [view, setView] = useState(location.hash === '#sites' ? 'sites' : 'dashboard');
   const [sites, setSites] = useState([]);
   const [results, setResults] = useState({});
+  const [usageResults, setUsageResults] = useState({});
   const [webhook, setWebhook] = useState('');
   const [hasWebhook, setHasWebhook] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -151,6 +152,20 @@ function Workspace({ onLogout }) {
     run('notify', async () => { await send('notify-test', 'POST', { webhook: webhook.trim() }); notify('测试通知已发送'); });
   }
 
+  function queryTokenUsage(site) {
+    run(`usage-${site.id}`, async () => {
+      try {
+        await save();
+        const { data } = await send('usage/token', 'POST', { siteId: site.id });
+        setUsageResults((current) => ({ ...current, [site.id]: { ok: true, data } }));
+        notify('消耗查询完成');
+      } catch (error) {
+        setUsageResults((current) => ({ ...current, [site.id]: { ok: false, message: error.message } }));
+        throw error;
+      }
+    });
+  }
+
   async function logout() {
     if (dirty && !window.confirm('还有未保存的配置，确定退出？')) return;
     run('logout', async () => { await api('logout', { method: 'POST' }); onLogout(); });
@@ -173,7 +188,7 @@ function Workspace({ onLogout }) {
           </div></section>
           <section className="notification-panel"><div><h3>企业微信通知</h3><p>所有站点共用此 Webhook，预警可按站点独立设置。</p></div><fieldset disabled={Boolean(busy)}><Field label="全局 Webhook" value={webhook} onChange={(value) => { setWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={testNotification}>{busy === 'notify' ? '发送中…' : '测试通知'}</button></section>
           {!sites.length && <div className="empty-state"><p>还没有监控站点，添加一个开始吧。</p><button className="primary-button" disabled={Boolean(busy)} onClick={add}><Plus size={15} aria-hidden="true" />添加站点</button></div>}
-          {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} onChange={change} onCheck={check} onToggle={toggle} onDelete={remove} onOpen={open} />)}
+          {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} usageResult={usageResults[site.id]} usageBusy={busy === `usage-${site.id}`} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} onChange={change} onCheck={check} onUsage={queryTokenUsage} onToggle={toggle} onDelete={remove} onOpen={open} />)}
           </>}
       <footer className="page-footer"><span>余额哨兵 · 多站点监控</span><span><i className="online-dot" />{syncError ? '等待恢复连接' : loaded ? '已连接服务端' : '正在连接'}</span></footer>
     </main>{toast && <div className={`toast ${toast.error ? 'error-toast' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.message}<button aria-label="关闭提示" onClick={() => setToast(null)}><X size={17} aria-hidden="true" /></button></div>}</div>;

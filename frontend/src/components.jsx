@@ -16,7 +16,7 @@ export function Field({ label, value, onChange, children, wide, ...props }) {
     || <input value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} />}</label>;
 }
 
-export function SiteCard({ site, result, index, busy, checking, selected, onChange, onCheck, onToggle, onDelete, onOpen }) {
+export function SiteCard({ site, result, usageResult, usageBusy, index, busy, checking, selected, onChange, onCheck, onUsage, onToggle, onDelete, onOpen }) {
   const [expanded, setExpanded] = useState(Boolean(site._new || selected));
   const [advanced, setAdvanced] = useState(Boolean(site._new));
   useEffect(() => { if (selected) setExpanded(true); }, [selected]);
@@ -34,6 +34,7 @@ export function SiteCard({ site, result, index, busy, checking, selected, onChan
         <button className="text-button" aria-expanded={expanded} aria-controls={`fields-${site.id}`} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开'}</button>
         <button className="text-button" disabled={busy} onClick={() => onOpen(site)}>进入 <ExternalLink size={12} aria-hidden="true" /></button>
         <button className="text-button" disabled={busy || !site.enabled} onClick={() => onCheck(site.id)}><RefreshCw size={12} aria-hidden="true" />检查</button>
+        {site.siteType === 'newapi' && site.authMode === 'token' && <button className="text-button" disabled={busy || (!site.token && !site.hasToken)} onClick={() => onUsage(site)}><Activity size={12} aria-hidden="true" />{usageBusy ? '查询中…' : '消耗查询'}</button>}
         <button className="text-button" disabled={busy} onClick={() => onToggle(site)}><Power size={12} aria-hidden="true" />{site.enabled ? '停用' : '启用'}</button>
         <button className="text-button danger" disabled={busy} onClick={() => onDelete(site)}><Trash2 size={12} aria-hidden="true" />删除</button>
       </div>
@@ -42,6 +43,10 @@ export function SiteCard({ site, result, index, busy, checking, selected, onChan
       <div className="site-result"><div><small>可用余额</small><strong>{result?.ok ? formatBalance(result.balance) : '—'} <em>{result?.currency || site.currency}</em></strong><small>{result?.displayName || result?.email || '等待连接'}</small></div>
         <div><small>最近状态</small><p>{!site.enabled ? '监控已停止' : result?.ok ? result.notified ? '已发送预警' : siteStatus(site, result).text : result?.message || '等待检查'}</p>
           <small className={result?.notificationError ? 'error-text' : ''}>{result?.notificationError ? `通知失败：${result.notificationError}` : result?.notificationMessage || formatTime(result?.checkedAt)}</small></div></div>
+      {site.siteType === 'newapi' && site.authMode === 'token' && usageResult && <section className={`token-usage ${usageResult.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
+        <div><strong>令牌消耗</strong><small>{usageResult.ok ? '刚刚查询' : usageResult.message}</small></div>
+        {usageResult.ok && <pre>{JSON.stringify(usageResult.data, null, 2)}</pre>}
+      </section>}
       <fieldset disabled={busy}>
         <div className="fields-grid">
           {field('name', '站点名称', { maxLength: 80 })}

@@ -107,6 +107,11 @@ td small { font-size: 9px; }
 .site-result strong { display: block; font-size: 28px; font-weight: 600; letter-spacing: -.8px; margin: 9px 0 2px; }
 .site-result em { font-size: 10px; color: var(--muted); font-style: normal; font-weight: 400; letter-spacing: 0; }
 .site-result p { font-size: 13px; margin: 13px 0 6px; overflow-wrap: anywhere; }
+.token-usage { margin: 0 0 20px; padding: 15px 16px; border: 1px solid var(--line); border-left: 3px solid #659277; background: #f8fbf8; }
+.token-usage > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.token-usage > div strong { font-size: 13px; }
+.token-usage > div small { color: var(--muted); overflow-wrap: anywhere; }
+.token-usage pre { max-height: 300px; margin: 12px 0 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; color: var(--ink); }
 .fields-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px 15px; }
 .wide { grid-column: span 2; }
 .site-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 17px; margin-top: 20px; }

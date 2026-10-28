@@ -20,7 +20,7 @@ from monitor import state
 from monitor.adapters import (
     normalize_site, public_site, validate_site_list, with_saved_secrets,
 )
-from monitor.balance import check_and_notify, record_daily_usage, send_wecom
+from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom
 from monitor.storage import save_sites, save_upstream_sessions
 
 logger = logging.getLogger(__name__)
@@ -214,6 +214,23 @@ def api_check(request: HttpRequest) -> HttpResponse:
     except (ValueError, Exception) as exc:
         status = getattr(exc, 'status', 400)
         return _err(str(exc), status)
+
+
+@csrf_exempt
+def api_token_usage(request: HttpRequest) -> HttpResponse:
+    if not _require_session(request):
+        return _err('请先登录管理后台', 401)
+    if request.method != 'POST':
+        return _err('Method not allowed', 405)
+    try:
+        body = _read_body(request)
+        site_id = str(body.get('siteId') or '')
+        site = next((item for item in state.saved_sites if str(item.get('id')) == site_id), None)
+        if not site:
+            return _err('未找到已保存的站点配置', 404)
+        return _json({'ok': True, 'data': get_token_usage(site)})
+    except Exception as exc:
+        return _err(str(exc), getattr(exc, 'status', 400))
 
 
 @csrf_exempt
