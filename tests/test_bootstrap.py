@@ -119,6 +119,7 @@ client.cookies.load(response['Set-Cookie'])
 assert client.get('/api/sites').status_code == 200
 index_page = client.get('/')
 assert index_page.status_code == 200
+assert 'no-store' in index_page['Cache-Control']
 assets = re.findall(r'(?:src|href)="(/assets/[^"]+)"', index_page.content.decode())
 assert assets
 content_types = {client.get(path)['Content-Type'].split(';')[0] for path in assets}

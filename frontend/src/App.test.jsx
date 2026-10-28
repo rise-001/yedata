@@ -14,7 +14,7 @@ function mockApi(config = {}) {
     if (path === 'login') return response(body.password === 'correct' ? { ok: true } : { ok: false, message: '管理员账号或密码错误' });
     if (state.expired) return response({ ok: false }, 401);
     if (path === 'sites' && options.method === 'PUT') {
-      state.sites = body.sites.map(({ password, token, sessionCookie, ...site }) => ({ ...site, hasPassword: Boolean(password || site.hasPassword), hasToken: Boolean(token || site.hasToken), hasSessionCookie: Boolean(sessionCookie || site.hasSessionCookie) }));
+      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, ...site }) => ({ ...site, hasPassword: Boolean(password || site.hasPassword), hasToken: Boolean(token || site.hasToken), hasSessionCookie: Boolean(sessionCookie || site.hasSessionCookie), hasUsageToken: Boolean(usageToken || site.hasUsageToken) }));
       return response({ ok: true, data: { sites: state.sites, settings: state.settings } });
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
@@ -113,10 +113,12 @@ describe('React 页面流程', () => {
     expect(screen.queryByLabelText('访问令牌 / Bearer Token')).not.toBeInTheDocument();
   });
 
-  it('New API 站点可以使用已保存令牌查询消耗', async () => {
-    const { fetch } = mockApi({ sites: [{ ...initialSite, siteType: 'newapi', newApiUserId: '1' }] });
+  it('New API 站点使用独立 Key 查询消耗，不受登录认证方式限制', async () => {
+    const newApiSite = { ...initialSite, siteType: 'newapi', authMode: 'password', email: 'admin@example.com', hasPassword: true, hasToken: false, hasUsageToken: true, newApiUserId: '1' };
+    const { fetch } = mockApi({ sites: [newApiSite] });
     const user = userEvent.setup();
     render(<App />); await openSiteSettings(user);
+    expect(screen.getByLabelText('消耗查询 Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     expect(await screen.findByText('令牌消耗')).toBeInTheDocument();
     expect(screen.getByText(/"used_quota": 1200/)).toBeInTheDocument();

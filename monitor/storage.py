@@ -56,7 +56,10 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
         obj.site_type = str(norm.get('siteType') or '')
         obj.email = str(norm.get('email') or '')
         # Only overwrite secrets when a non-empty value is provided.
-        for js_key, py_attr in (('password', 'password'), ('token', 'token'), ('sessionCookie', 'session_cookie')):
+        for js_key, py_attr in (
+            ('password', 'password'), ('token', 'token'),
+            ('sessionCookie', 'session_cookie'), ('usageToken', 'usage_token'),
+        ):
             val = norm.get(js_key)
             if val:
                 setattr(obj, py_attr, str(val))

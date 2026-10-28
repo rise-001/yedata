@@ -24,7 +24,7 @@ SITE_ADAPTERS = {
     },
 }
 
-SECRET_FIELDS = ('password', 'token', 'sessionCookie')
+SECRET_FIELDS = ('password', 'token', 'sessionCookie', 'usageToken')
 
 
 def normalize_site(site: dict) -> dict:
@@ -70,6 +70,7 @@ def public_site(site: dict) -> dict:
     result['hasPassword'] = bool(site.get('password'))
     result['hasToken'] = bool(site.get('token'))
     result['hasSessionCookie'] = bool(site.get('sessionCookie'))
+    result['hasUsageToken'] = bool(site.get('usageToken'))
     return result
 
 

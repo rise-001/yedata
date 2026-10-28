@@ -347,6 +347,11 @@ def serve_static(request: HttpRequest, path: str = '') -> HttpResponse:
     ext = file_path.suffix.lower()
     content_type = _MIME.get(ext, mimetypes.guess_type(str(file_path))[0] or 'application/octet-stream')
     resp = HttpResponse(content, content_type=content_type)
-    resp['Cache-Control'] = 'no-cache'
+    if ext == '.html':
+        resp['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        resp['Pragma'] = 'no-cache'
+        resp['Expires'] = '0'
+    else:
+        resp['Cache-Control'] = 'no-cache'
     resp['X-Content-Type-Options'] = 'nosniff'
     return resp

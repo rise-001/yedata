@@ -61,11 +61,9 @@ def get_token_usage(site: dict):
     cfg = site_config(site)
     if cfg.get('siteType') != 'newapi':
         raise ValueError('消耗查询仅支持 New API 站点')
-    token = str(cfg.get('token') or '').strip()
-    if token.lower().startswith('bearer '):
-        token = token[7:].strip()
+    token = str(cfg.get('usageToken') or '').strip()
     if not token:
-        raise ValueError('请先在站点设置中填写访问令牌并保存')
+        raise ValueError('请先在站点设置中填写消耗查询 Key 并保存')
 
     user_id = str(cfg.get('newApiUserId') or '').strip() or '1'
     headers = {'Authorization': token, 'new-api-user': user_id}

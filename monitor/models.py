@@ -32,6 +32,7 @@ class Site(models.Model):
     # Secret fields — stored in DB, never returned to the browser.
     password = models.TextField(blank=True)
     token = models.TextField(blank=True)
+    usage_token = models.TextField(blank=True)
     session_cookie = models.TextField(blank=True)
     auth_mode = models.CharField(max_length=32, blank=True, default='password')
     new_api_user_id = models.CharField(max_length=64, blank=True)
@@ -61,6 +62,7 @@ class Site(models.Model):
         'balanceField': 'balance_field', 'balanceDivisor': 'balance_divisor',
         'balanceMultiplier': 'balance_multiplier', 'notifyEnabled': 'notify_enabled',
         'authMode': 'auth_mode', 'sessionCookie': 'session_cookie',
+        'usageToken': 'usage_token',
     }
     _FIELD_MAP_INV = {v: k for k, v in _FIELD_MAP.items()}
 
@@ -93,6 +95,7 @@ class Site(models.Model):
             'email': self.email,
             'password': self.password,
             'token': self.token,
+            'usageToken': self.usage_token,
             'sessionCookie': self.session_cookie,
             'authMode': self.auth_mode,
             'timezone': self.timezone,

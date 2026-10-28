@@ -8,7 +8,7 @@ export const typeNames = { auto: '自动识别', sub2: 'Sub2', newapi: 'New API'
 export function hydrateSite(site) {
   return {
     name: '', baseUrl: '', timezone: 'Asia/Shanghai', loginPath: '', mePath: '', usagePath: '',
-    siteType: 'auto', authMode: 'password', email: '', password: '', token: '', sessionCookie: '',
+    siteType: 'auto', authMode: 'password', email: '', password: '', token: '', sessionCookie: '', usageToken: '',
     newApiUserId: '', threshold: 100, intervalSeconds: 300, balanceField: 'auto',
     balanceDivisor: '', balanceMultiplier: 1, currency: '', enabled: true, notifyEnabled: true,
     ...site,

@@ -34,11 +34,12 @@ async function mockApi(page, { authenticated = true, results = {}, sites = [site
         response = { ok: true };
       } else response = { ok: false, message: '管理员账号或密码错误' };
     } else if (path === 'sites' && request.method() === 'PUT') {
-      state.sites = body.sites.map(({ password, token, sessionCookie, ...item }) => ({
+      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, ...item }) => ({
         ...item,
         hasPassword: Boolean(password || item.hasPassword),
         hasToken: Boolean(token || item.hasToken),
         hasSessionCookie: Boolean(sessionCookie || item.hasSessionCookie),
+        hasUsageToken: Boolean(usageToken || item.hasUsageToken),
       }));
       response = { ok: true, data: { sites: state.sites, settings: state.settings } };
     } else if (path === 'sites') {

@@ -17,7 +17,8 @@ SITE = {
     'baseUrl': 'https://newapi.example.com/',
     'siteType': 'newapi',
     'authMode': 'token',
-    'token': 'Bearer sk-secret',
+    'token': 'dashboard-login-token',
+    'usageToken': 'sk-usage-key',
     'newApiUserId': '7',
 }
 
@@ -30,14 +31,14 @@ class TokenUsageTests(unittest.TestCase):
         self.assertEqual(result['data']['used_quota'], 12)
         fetch.assert_called_once_with(
             'https://newapi.example.com/api/usage/token/',
-            headers={'Authorization': 'sk-secret', 'new-api-user': '7'},
+            headers={'Authorization': 'sk-usage-key', 'new-api-user': '7'},
         )
 
     def test_usage_requires_newapi_site_and_token(self):
         with self.assertRaisesRegex(ValueError, 'New API'):
             balance.get_token_usage({**SITE, 'siteType': 'sub2'})
-        with self.assertRaisesRegex(ValueError, '访问令牌'):
-            balance.get_token_usage({**SITE, 'token': ''})
+        with self.assertRaisesRegex(ValueError, '消耗查询 Key'):
+            balance.get_token_usage({**SITE, 'usageToken': ''})
 
     def test_usage_defaults_new_api_user_to_one(self):
         with patch.object(balance, 'fetch_json', return_value={}) as fetch:
