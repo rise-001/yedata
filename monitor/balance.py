@@ -595,14 +595,8 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
             result = get_balance(site, usage_day=yesterday)
             record_daily_usage(site, result)
             ok_count += 1
-            threshold_f = None
-            try:
-                threshold_f = float(site.get('threshold'))
-            except (TypeError, ValueError):
-                pass
-            low = threshold_f is not None and result['balance'] <= threshold_f
             currency = result.get('currency', '')
-            amount = f'{result["balance"]:.2f} {currency}'.strip()
+            amount = f'{result["balance"]:.2f}'
             cfg = site_config(site)
             yesterday_usage = (result['usage']['cost'] if result.get('usage')
                                else (None if cfg.get('usagePath')
@@ -611,18 +605,16 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
                 usage_known += 1
                 usage_totals[currency] = usage_totals.get(currency, 0) + yesterday_usage
             balance_totals[currency] = balance_totals.get(currency, 0) + result['balance']
-            threshold_text = (f'（阈值 {threshold_f:.2f}）' if threshold_f is not None else '')
             usage_text = ('昨日用量未知（需连续运行两天）' if yesterday_usage is None
-                          else f'昨日用量 {yesterday_usage:.2f} {currency}'.strip())
-            prefix = '⚠️ ' if low else ''
-            lines.append(f'> {prefix}**{site_name}**：{amount}{threshold_text}，{usage_text}')
+                          else f'昨日用量 {yesterday_usage:.2f}')
+            lines.append(f'> **{site_name}**：{amount}，{usage_text}')
         except Exception as exc:
             lines.append(f'> ❌ **{site_name}**：查询失败 - {str(exc) or "未知错误"}')
 
     def sum_text(totals: dict) -> str:
         if not totals:
             return '--'
-        return ' / '.join(f'{v:.2f} {c}'.strip() for c, v in totals.items())
+        return ' / '.join(f'{v:.2f}' for v in totals.values())
 
     failed = len(enabled_sites) - ok_count
     try:

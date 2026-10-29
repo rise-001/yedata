@@ -140,3 +140,14 @@ class DailyUsage(models.Model):
         app_label = 'monitor'
         unique_together = [('site_id', 'day_key')]
         indexes = [models.Index(fields=['site_id', 'day_key'])]
+
+
+class DailyReport(models.Model):
+    """Persistent record preventing duplicate daily reports after restarts."""
+    timezone = models.CharField(max_length=64)
+    day_key = models.CharField(max_length=10)
+    sent_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'monitor'
+        unique_together = [('timezone', 'day_key')]

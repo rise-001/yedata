@@ -29,6 +29,15 @@ def _run_daily_reports(now: float) -> None:
             day = f'{parts["year"]}-{parts["month"]}-{parts["day"]}'
             if state.daily_report_sent.get(tz) == day:
                 continue
+            from monitor.storage import claim_daily_report, release_daily_report_claim
+            try:
+                claimed = claim_daily_report(tz, day)
+            except Exception as exc:
+                logger.error('Daily balance report claim failed: %s', exc)
+                continue
+            if not claimed:
+                state.daily_report_sent[tz] = day
+                continue
             last_attempt = state.daily_report_last_attempt.get(tz)
             if last_attempt is not None and now - last_attempt < 60:
                 continue
@@ -36,7 +45,10 @@ def _run_daily_reports(now: float) -> None:
             try:
                 if run_daily_report(timezone=tz):
                     state.daily_report_sent[tz] = day
+                else:
+                    release_daily_report_claim(tz, day)
             except Exception as exc:
+                release_daily_report_claim(tz, day)
                 logger.error('Daily balance report failed: %s', exc)
 
     for cache in (state.daily_report_sent, state.daily_report_last_attempt):

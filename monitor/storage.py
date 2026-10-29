@@ -157,3 +157,21 @@ def save_daily_usage(usage: dict[str, dict[str, float]]) -> None:
                 day_key=str(day_key),
                 defaults={'used_balance': float(value)},
             )
+
+
+def claim_daily_report(timezone: str, day_key: str) -> bool:
+    """Atomically reserve this timezone/day so only one process sends it."""
+    try:
+        from monitor.models import DailyReport
+        _, created = DailyReport.objects.get_or_create(
+            timezone=str(timezone), day_key=str(day_key),
+        )
+        return created
+    except Exception:
+        logger.exception('Failed to claim daily report delivery')
+        raise
+
+
+def release_daily_report_claim(timezone: str, day_key: str) -> None:
+    from monitor.models import DailyReport
+    DailyReport.objects.filter(timezone=str(timezone), day_key=str(day_key)).delete()

@@ -31,6 +31,12 @@ class NotificationTests(unittest.TestCase):
             patcher = patch(target, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        self.claim_report = patch('monitor.storage.claim_daily_report', return_value=True)
+        self.release_report = patch('monitor.storage.release_daily_report_claim')
+        self.claim_report.start()
+        self.release_report.start()
+        self.addCleanup(self.claim_report.stop)
+        self.addCleanup(self.release_report.stop)
 
     def response(self, data=None, *, status=200):
         response = Mock(ok=status < 400, status_code=status)
@@ -116,6 +122,10 @@ class NotificationTests(unittest.TestCase):
         self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
         get.assert_called_once()
         self.assertEqual(get.call_args.args[0]['id'], 'alpha')
+        report_text = send.call_args.args[1]
+        self.assertIn('Alpha**：10.00，昨日用量 2.00', report_text)
+        self.assertNotIn('CNY', report_text)
+        self.assertNotIn('阈值', report_text)
         send.side_effect = ValueError('send failed')
         with self.assertLogs('monitor.balance', level='ERROR'):
             self.assertFalse(balance.run_daily_report(timezone='Asia/Shanghai'))
@@ -156,6 +166,16 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(state.daily_report_last_attempt, {})
         scheduler._run_daily_reports(1000)
         report.assert_called_once()
+
+    @patch('monitor.time_utils.local_parts', return_value={'year': '2026', 'month': '10', 'day': '27', 'hour': '09'})
+    @patch.object(balance, 'run_daily_report', return_value=True)
+    def test_persistent_claim_suppresses_reports_sent_by_another_process(self, report, parts):
+        self.claim_report.stop()
+        claim = patch('monitor.storage.claim_daily_report', return_value=False)
+        claim.start()
+        self.addCleanup(claim.stop)
+        scheduler._run_daily_reports(1000)
+        report.assert_not_called()
 
 
 if __name__ == '__main__':
