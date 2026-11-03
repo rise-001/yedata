@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
+import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, GripVertical, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
 import { formatBalance, formatInterval, formatTime, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
@@ -16,7 +16,7 @@ export function Field({ label, value, onChange, children, wide, ...props }) {
     || <input value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} />}</label>;
 }
 
-export function SiteCard({ site, result, usageResult, usageBusy, index, busy, checking, selected, onChange, onCheck, onUsage, onToggle, onDelete, onOpen }) {
+export function SiteCard({ site, result, usageResult, usageBusy, index, busy, checking, selected, dragging, dragOver, onChange, onCheck, onUsage, onToggle, onDelete, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, onMove }) {
   const [expanded, setExpanded] = useState(Boolean(site._new || selected));
   const [advanced, setAdvanced] = useState(Boolean(site._new));
   useEffect(() => { if (selected) setExpanded(true); }, [selected]);
@@ -31,9 +31,16 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
   const usage = usageResult?.data;
   const quota = (value) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
   const expires = usage?.expiresAt === -1 ? '永不过期' : usage?.expiresAt ? new Date(usage.expiresAt * 1000).toLocaleString('zh-CN', { hour12: false }) : '未提供';
-  return <article id={`site-${site.id}`} className={`site-card ${!site.enabled ? 'muted-card' : ''} ${selected ? 'selected-card' : ''}`}>
+  function handleDragKeyDown(event) {
+    const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    onMove(site.id, direction);
+  }
+  return <article id={`site-${site.id}`} className={`site-card ${!site.enabled ? 'muted-card' : ''} ${selected ? 'selected-card' : ''} ${dragging ? 'is-dragging' : ''} ${dragOver ? 'is-drag-over' : ''}`}
+    onDragOver={(event) => onDragOver(event, site.id)} onDrop={(event) => onDrop(event, site.id)}>
     <header className="site-header">
-      <div className="site-title"><span className="section-index">{String(index + 1).padStart(2, '0')}</span><h3>{site.name || '未命名站点'}</h3><Status site={site} result={result} checking={checking} />
+      <div className="site-title"><button type="button" className="drag-handle" draggable="true" disabled={busy} aria-label={`拖动排序：${site.name || '未命名站点'}`} aria-describedby="site-order-help" title="拖动调整顺序，或使用上下方向键" onDragStart={(event) => onDragStart(event, site.id)} onDragEnd={onDragEnd} onKeyDown={handleDragKeyDown}><GripVertical size={16} aria-hidden="true" /></button><span className="section-index">{String(index + 1).padStart(2, '0')}</span><h3>{site.name || '未命名站点'}</h3><Status site={site} result={result} checking={checking} />
         {!expanded && <span className="mini-balance">{result?.ok ? formatBalance(result.balance) : '—'} <small>{result?.currency || site.currency}</small></span>}</div>
       <div className="site-actions">
         <button className="text-button" aria-expanded={expanded} aria-controls={`fields-${site.id}`} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开'}</button>

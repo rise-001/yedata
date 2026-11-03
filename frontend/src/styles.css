@@ -94,7 +94,13 @@ td small { font-size: 9px; }
 .field input:disabled, .field select:disabled, .field textarea:disabled { opacity: .6; }
 .site-card { margin-bottom: 15px; padding: 20px 22px; scroll-margin-top: 25px; }
 .site-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.site-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.site-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.site-order-help { margin: -5px 0 13px; color: #7c8d85; font-size: 10px; line-height: 1.6; }
+.drag-handle { display: inline-grid; place-items: center; width: 25px; height: 25px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #8ca095; cursor: grab; }
+.drag-handle:hover:not(:disabled) { border-color: #d7e5d8; background: #f2f8f1; color: #477459; }
+.drag-handle:active:not(:disabled) { cursor: grabbing; }
+.site-card.is-dragging { opacity: .48; border-style: dashed; }
+.site-card.is-drag-over { border-color: #72a27d; box-shadow: 0 0 0 3px #72a27d20; }
 .site-title h3 { font-size: 14px; margin: 0; overflow-wrap: anywhere; }
 .site-actions { display: flex; gap: 11px; flex-shrink: 0; }
 .mini-balance { font-size: 12px; font-weight: 600; color: #52745a; }

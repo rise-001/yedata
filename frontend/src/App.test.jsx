@@ -73,6 +73,39 @@ describe('React 页面流程', () => {
     expect(screen.queryByText('配置有修改，请保存以应用到后台监控。')).not.toBeInTheDocument();
   });
 
+  it('拖动站点后保存新的显示顺序', async () => {
+    const sites = [initialSite, { ...initialSite, id: 'beta', name: 'Beta', baseUrl: 'https://beta.example.com' }];
+    const { fetch } = mockApi({ sites });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Alpha/ }));
+    const handles = await screen.findAllByRole('button', { name: /拖动排序/ });
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn() };
+    fireEvent.dragStart(handles[0], { dataTransfer });
+    const betaCard = document.getElementById('site-beta');
+    fireEvent.dragOver(betaCard, { dataTransfer });
+    fireEvent.drop(betaCard, { dataTransfer });
+    expect(await screen.findByText('配置有修改，请保存以应用到后台监控。')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await screen.findByText('配置已保存，后台监控已生效');
+    const [, options] = fetch.mock.calls.find(([, request]) => request.method === 'PUT');
+    expect(JSON.parse(options.body).sites.map((site) => site.id)).toEqual(['beta', 'alpha']);
+  });
+
+  it('可使用上下方向键调整站点顺序', async () => {
+    const sites = [initialSite, { ...initialSite, id: 'beta', name: 'Beta', baseUrl: 'https://beta.example.com' }];
+    const { fetch } = mockApi({ sites });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /Alpha/ }));
+    const handles = await screen.findAllByRole('button', { name: /拖动排序/ });
+    handles[0].focus();
+    await user.keyboard('{ArrowDown}');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await screen.findByText('配置已保存，后台监控已生效');
+    const [, options] = fetch.mock.calls.find(([, request]) => request.method === 'PUT');
+    expect(JSON.parse(options.body).sites.map((site) => site.id)).toEqual(['beta', 'alpha']);
+  });
   it('同步余额时不会覆盖未保存的表单修改', async () => {
     const { state, fetch } = mockApi();
     const user = userEvent.setup();

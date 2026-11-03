@@ -39,6 +39,8 @@ function Workspace({ onLogout }) {
   const [busy, setBusy] = useState('');
   const [checkingIds, setCheckingIds] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [draggedSite, setDraggedSite] = useState(null);
+  const [dragOverSite, setDragOverSite] = useState(null);
   const [toast, setToast] = useState(null);
   const [retry, setRetry] = useState(0);
   const refreshInFlight = useRef(false);
@@ -90,6 +92,26 @@ function Workspace({ onLogout }) {
   function navigate(next) { setView(next); history.replaceState(null, '', `/#${next}`); }
   function edit(id) { setSelected(id); navigate('sites'); }
   function change(id, update) { if (operation.current) return; setSites((current) => current.map((site) => site.id === id ? { ...site, ...update } : site)); setDirty(true); }
+  function reorderSite(id, target) {
+    if (operation.current) return;
+    const from = sites.findIndex((site) => site.id === id);
+    const to = typeof target === 'number' ? target : sites.findIndex((site) => site.id === target);
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...sites];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setSites(next);
+    setDirty(true);
+  }
+  function moveSite(id, offset) {
+    const from = sites.findIndex((site) => site.id === id);
+    if (from < 0) return;
+    reorderSite(id, Math.min(sites.length - 1, Math.max(0, from + offset)));
+  }
+  function dragStart(event, id) { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', id); setDraggedSite(id); }
+  function dragOver(event, id) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (draggedSite && draggedSite !== id) setDragOverSite(id); }
+  function drop(event, id) { event.preventDefault(); if (draggedSite && draggedSite !== id) reorderSite(draggedSite, id); dragEnd(); }
+  function dragEnd() { setDraggedSite(null); setDragOverSite(null); }
   function add() {
     if (operation.current) return;
     if (sites.length >= 100) return notify('最多可添加 100 个站点', true);
@@ -188,7 +210,8 @@ function Workspace({ onLogout }) {
           </div></section>
           <section className="notification-panel"><div><h3>企业微信通知</h3><p>所有站点共用此 Webhook，预警可按站点独立设置。</p></div><fieldset disabled={Boolean(busy)}><Field label="全局 Webhook" value={webhook} onChange={(value) => { setWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={testNotification}>{busy === 'notify' ? '发送中…' : '测试通知'}</button></section>
           {!sites.length && <div className="empty-state"><p>还没有监控站点，添加一个开始吧。</p><button className="primary-button" disabled={Boolean(busy)} onClick={add}><Plus size={15} aria-hidden="true" />添加站点</button></div>}
-          {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} usageResult={usageResults[site.id]} usageBusy={busy === `usage-${site.id}`} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} onChange={change} onCheck={check} onUsage={queryTokenUsage} onToggle={toggle} onDelete={remove} onOpen={open} />)}
+          <p id="site-order-help" className="site-order-help">拖动站点左侧手柄调整显示顺序；聚焦手柄后也可用上下方向键移动。排序保存后同步到余额概览。</p>
+          {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} usageResult={usageResults[site.id]} usageBusy={busy === `usage-${site.id}`} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} dragging={draggedSite === site.id} dragOver={dragOverSite === site.id} onChange={change} onCheck={check} onUsage={queryTokenUsage} onToggle={toggle} onDelete={remove} onOpen={open} onDragStart={dragStart} onDragOver={dragOver} onDrop={drop} onDragEnd={dragEnd} onMove={moveSite} />)}
           </>}
       <footer className="page-footer"><span>余额哨兵 · 多站点监控</span><span><i className="online-dot" />{syncError ? '等待恢复连接' : loaded ? '已连接服务端' : '正在连接'}</span></footer>
     </main>{toast && <div className={`toast ${toast.error ? 'error-toast' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.message}<button aria-label="关闭提示" onClick={() => setToast(null)}><X size={17} aria-hidden="true" /></button></div>}</div>;
