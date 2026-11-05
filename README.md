@@ -52,6 +52,10 @@ Sub2 和 New API 站点均支持独立的“消耗查询 API Keys”（通常以
 - **Sub2**：请求站点接口地址下的 `GET /v1/usage`（例如 `https://api.deepspacecode.chat/v1/usage`），发送 `Authorization: Bearer <API Key>`，超时为 20 秒。今日使用金额读取 `usage.today.actual_cost`（同时兼容顶层 `today.actual_cost` 和 `data` 包装），不套用余额换算除数或倍率；展示每个 Key 的今日金额及合计，部分失败时显示仅成功项的小计。金额单位沿用上游接口含义，不自动换算币种。此接口与日报使用的 `/api/v1/usage/dashboard/trend` 独立。
 - **New API**：请求 `GET /api/usage/token`，发送 `Authorization: Bearer <API Key>`，填写 `New-Api-User ID` 时同时发送 `New-Api-User` 请求头。名称读取 `name`，累计消耗金额为 `total_used / 500000`，剩余金额和总金额分别为 `total_available / 500000`、`total_granted / 500000`，同时兼容旧版 `used_quota` 等字段。此换算固定使用 `500000`，不套用站点的余额倍率或除数；不限额的 Key 仍显示累计消耗，`expires_at` 为 `0` 或 `-1` 时显示永不过期。
 
+New API 今日用量使用已保存的“访问令牌 / Bearer Token”（控制台访问令牌，不是 `sk-` 模型调用 Key）和 `New-Api-User ID`，无需重复填写。程序先从令牌接口取得 `name`，再请求 `GET /api/log/self/stat?token_name=...&start_timestamp=...&end_timestamp=...`，使用 `Authorization: Bearer <访问令牌>` 和 `New-Api-User`，超时 30 秒。统计范围为站点时区当天零点至本次查询时刻，默认 `Asia/Shanghai`（UTC+8）；今日金额为 `data.quota / 500000`。页面分别显示今日金额与累计金额，今日查询失败不影响累计结果，合计只统计成功取得的今日金额。
+
+今日接口按名称筛选，请为上游 Key 设置唯一名称。多个已配置 Key 返回相同名称时，页面会提示修改上游名称，避免将同一份按名称统计的今日用量重复计入合计。
+
 这些 Key 与余额查询使用的账号、密码和控制台访问令牌独立；New API 消耗查询复用站点配置中的 `New-Api-User ID`。Key 只保存在服务端数据库，页面仅收到名称和是否已保存的标记；留空保存保留对应 Key，删除并保存会移除对应 Key。旧的单 Key 配置会自动迁移。
 
 余额看板和站点设置中的“进入网站”按钮会直接在新标签页打开该站点保存的接口地址。跨域网站的浏览器登录态无法由本服务通用注入；自动登录需要目标网站提供 SSO、一次性登录链接或专用换票接口。

@@ -183,17 +183,41 @@ describe('React 页面流程', () => {
       name: 'gemini 文本', usedQuota: 136.460558, remainingQuota: -9.73614,
       totalQuota: 126.724418, unlimitedQuota: true, expiresAt: 0,
       modelLimitsEnabled: false, modelLimits: [],
-    } }], successCount: 1, failedCount: 0 } });
+      todayActualCost: 3, todayQuota: 1500000,
+      todayRange: { startTimestamp: Date.parse('2026-11-04T16:00:00Z') / 1000,
+        endTimestamp: Date.parse('2026-11-04T16:05:00Z') / 1000, timezone: 'Asia/Shanghai' },
+    } }], successCount: 1, failedCount: 0, todayActualCost: 3,
+      todaySuccessCount: 1, todayFailedCount: 0 } });
     const user = userEvent.setup();
     render(<App />); await openSiteSettings(user);
     expect(screen.getByLabelText('New-Api-User ID')).toHaveValue('5');
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     expect(await screen.findByText('gemini 文本 · Key 1')).toBeInTheDocument();
     expect(screen.getByText('累计消耗金额')).toBeInTheDocument();
+    expect(screen.getByText('今日消耗金额')).toBeInTheDocument();
+    expect(screen.getByText('今日用量：1 个成功，0 个未获取')).toBeInTheDocument();
+    expect(screen.getByText(/统计范围：.*00:00:00.*00:05:00/)).toBeInTheDocument();
     expect(screen.getByText('136.460558')).toBeInTheDocument();
     expect(screen.getAllByText('不限额')).toHaveLength(2);
     expect(screen.getByText('永不过期')).toBeInTheDocument();
     expect(screen.getByText('未限制')).toBeInTheDocument();
+  });
+
+  it('New API 今日查询失败仍显示累计消耗，并提示今日结果不完整', async () => {
+    mockApi({ sites: [{ ...initialSite, siteType: 'newapi', newApiUserId: '5',
+      usageKeys: [{ id: 'saved', name: 'Key 1', hasToken: true }] }], usageResult: {
+      keys: [{ keyId: 'saved', keyName: 'Key 1', ok: true,
+        data: { name: 'gemini', usedQuota: 136.460558, todayActualCost: null, todayError: '用量接口请求超时' } }],
+      successCount: 1, failedCount: 0, todayActualCost: null, todaySuccessCount: 0, todayFailedCount: 1,
+    } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    expect(await screen.findByText('今日用量未获取：用量接口请求超时')).toBeInTheDocument();
+    expect(screen.getByText('136.460558')).toBeInTheDocument();
+    expect(screen.getByText(/今日使用金额小计（仅成功项）/)).toBeInTheDocument();
+    expect(screen.getByText('今日用量：0 个成功，1 个未获取')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('1 个今日用量未获取');
   });
 
   it('Sub2 添加多个 Key 后先保存再查询，显示今日金额与失败项小计', async () => {

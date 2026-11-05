@@ -187,7 +187,9 @@ function Workspace({ onLogout }) {
         await save();
         const { data } = await send('usage/token', 'POST', { siteId: site.id });
         setUsageResults((current) => ({ ...current, [site.id]: { ok: true, data } }));
-        notify(data.failedCount ? `消耗查询完成：${data.successCount} 个成功，${data.failedCount} 个失败` : '消耗查询完成', data.failedCount > 0);
+        const issues = [data.failedCount ? `${data.failedCount} 个 Key 查询失败` : '',
+          data.todayFailedCount ? `${data.todayFailedCount} 个今日用量未获取` : ''].filter(Boolean);
+        notify(issues.length ? `消耗查询完成：${issues.join('，')}` : '消耗查询完成', issues.length > 0);
       } catch (error) {
         setUsageResults((current) => ({ ...current, [site.id]: { ok: false, message: error.message } }));
         throw error;

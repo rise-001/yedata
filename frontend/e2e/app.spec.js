@@ -88,6 +88,29 @@ test('移动端 Sub2 多 Key 查询显示今日使用金额和部分失败', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test('移动端 New API 同时展示今日与累计金额及统计时区', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockApi(page, { sites: [{ ...site, siteType: 'newapi', newApiUserId: '5',
+    usageKeys: [{ id: 'gemini', name: 'Key 1', hasToken: true }],
+  }], usageResult: {
+    keys: [{ keyId: 'gemini', keyName: 'Key 1', ok: true, data: {
+      name: 'gemini 文本', usedQuota: 136.460558, unlimitedQuota: true, expiresAt: 0,
+      todayActualCost: 3, todayQuota: 1500000,
+      todayRange: { startTimestamp: Date.parse('2026-11-04T16:00:00Z') / 1000,
+        endTimestamp: Date.parse('2026-11-04T16:05:00Z') / 1000, timezone: 'Asia/Shanghai' },
+    } }], successCount: 1, failedCount: 0, todayActualCost: 3, todaySuccessCount: 1, todayFailedCount: 0,
+  } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+  await page.getByRole('button', { name: '消耗查询', exact: true }).click();
+  const result = page.getByRole('region', { name: '令牌消耗查询结果' });
+  await expect(result).toContainText('gemini 文本');
+  await expect(result).toContainText('今日消耗金额3');
+  await expect(result).toContainText('累计消耗金额136.460558');
+  await expect(result).toContainText('Asia/Shanghai');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
 test('桌面端完成登录、编辑和余额检查', async ({ page }, testInfo) => {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));

@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor
 from math import isfinite
 from datetime import datetime
 from datetime import timezone as dt_timezone
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 from django.conf import settings
@@ -74,21 +76,37 @@ def get_token_usage(site: dict):
     keys = get_usage_keys(cfg, require_tokens=True)
     if not keys:
         raise ValueError('请先在站点设置中填写消耗查询 API Key 并保存')
+    queried_at = datetime.now(dt_timezone.utc)
+
+    def error_message(exc):
+        if isinstance(exc, requests.Timeout):
+            return '用量接口请求超时，请稍后重试'
+        if isinstance(exc, requests.RequestException):
+            return '无法连接用量接口，请稍后重试'
+        message = str(exc)
+        sensitive_values = [key['token'] for key in keys]
+        sensitive_values.extend(str(cfg.get(field) or '').strip()
+                                for field in ('token', 'password', 'sessionCookie'))
+        for value in sensitive_values:
+            if value.lower().startswith('bearer '):
+                value = value[7:].strip()
+            if value:
+                message = message.replace(value, '[已隐藏]')
+        return message
 
     def query(key):
         try:
-            return {'keyId': key['id'], 'keyName': key['name'], 'ok': True,
-                    'data': _get_token_usage(cfg, key['token'])}
+            data = _get_token_usage(cfg, key['token'])
+            if not is_sub2_site(cfg):
+                try:
+                    data.update(_get_newapi_today_usage(cfg, data['name'], queried_at))
+                except Exception as exc:
+                    data.update({'todayActualCost': None, 'todayQuota': None,
+                                 'todayError': error_message(exc)})
+            return {'keyId': key['id'], 'keyName': key['name'], 'ok': True, 'data': data}
         except Exception as exc:
-            if isinstance(exc, requests.Timeout):
-                message = '用量接口请求超时，请稍后重试'
-            elif isinstance(exc, requests.RequestException):
-                message = '无法连接用量接口，请稍后重试'
-            else:
-                message = str(exc)
-                for saved_key in keys:
-                    message = message.replace(saved_key['token'], '[已隐藏]')
-            return {'keyId': key['id'], 'keyName': key['name'], 'ok': False, 'message': message}
+            return {'keyId': key['id'], 'keyName': key['name'], 'ok': False,
+                    'message': error_message(exc)}
 
     # Older API clients still receive the original flat single-key data shape.
     if 'usageKeys' not in cfg:
@@ -100,13 +118,63 @@ def get_token_usage(site: dict):
     with ThreadPoolExecutor(max_workers=min(5, len(keys))) as pool:
         results = list(pool.map(query, keys))
     successful = [item['data'] for item in results if item['ok']]
+    if not is_sub2_site(cfg):
+        names, duplicates = set(), set()
+        for item in successful:
+            name = item.get('name')
+            if name in names:
+                duplicates.add(name)
+            names.add(name)
+        for item in successful:
+            if item.get('name') in duplicates:
+                item.update({'todayActualCost': None, 'todayQuota': None,
+                             'todayError': '多个 Key 返回相同名称，请先在上游设置不同名称再查询今日用量'})
+    today_results = [item for item in successful if item.get('todayActualCost') is not None]
     return {
         'keys': results,
         'successCount': len(successful),
         'failedCount': len(results) - len(successful),
-        'todayActualCost': (sum(item['todayActualCost'] for item in successful)
-                            if is_sub2_site(cfg) and successful else None),
+        'todayActualCost': (sum(item['todayActualCost'] for item in today_results)
+                            if today_results else None),
+        'todaySuccessCount': len(today_results),
+        'todayFailedCount': len(results) - len(today_results),
     }
+
+
+def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> dict:
+    access_token = str(cfg.get('token') or '').strip()
+    if access_token.lower().startswith('bearer '):
+        access_token = access_token[7:].strip()
+    user_id = str(cfg.get('newApiUserId') or '').strip()
+    if not access_token or not user_id:
+        raise ValueError('今日用量需要站点已保存的访问令牌 / Bearer Token 和 New-Api-User ID')
+    if not key_name:
+        raise ValueError('令牌接口未返回 name，无法按 Key 名称查询今日用量')
+
+    zone = str(cfg.get('timezone') or 'Asia/Shanghai')
+    now = queried_at.astimezone(ZoneInfo(zone))
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_timestamp, end_timestamp = int(start.timestamp()), int(now.timestamp())
+    params = urlencode({'token_name': key_name, 'start_timestamp': start_timestamp,
+                        'end_timestamp': end_timestamp})
+    raw = fetch_json(
+        url_for(cfg.get('baseUrl', ''), '/api/log/self/stat') + '?' + params,
+        headers={'Authorization': f'Bearer {access_token}', 'New-Api-User': user_id},
+        timeout=30,
+    )
+    if not isinstance(raw, dict) or raw.get('success') is not True:
+        raise ValueError('今日用量接口未确认查询成功')
+    data = raw.get('data')
+    value = data.get('quota') if isinstance(data, dict) else None
+    try:
+        quota = float(value) if not isinstance(value, bool) else float('nan')
+    except (TypeError, ValueError):
+        quota = float('nan')
+    if not isfinite(quota):
+        raise ValueError('今日用量接口未返回有效的 data.quota')
+    return {'todayQuota': quota, 'todayActualCost': quota / 500000,
+            'todayRange': {'startTimestamp': start_timestamp, 'endTimestamp': end_timestamp,
+                           'timezone': zone}}
 
 
 def _get_token_usage(cfg: dict, token: str) -> dict:

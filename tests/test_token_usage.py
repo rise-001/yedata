@@ -2,6 +2,8 @@ import json
 import os
 import time
 import unittest
+from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock, patch
 
 import requests
@@ -26,6 +28,12 @@ SITE = {
 
 
 class TokenUsageTests(unittest.TestCase):
+    def setUp(self):
+        # Isolate existing cumulative/Sub2 fixtures from the separate daily API.
+        today = patch.object(balance, '_get_newapi_today_usage', return_value={})
+        today.start()
+        self.addCleanup(today.stop)
+
     def test_usage_request_uses_saved_token_and_user_id(self):
         response = {'code': True, 'data': {
             'name': 'production', 'used_quota': 6000000, 'remain_quota': 44000000,
@@ -252,6 +260,141 @@ class TokenUsageTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['data']['usedQuota'], 12)
         get_usage.assert_called_once_with(SITE)
+
+
+class NewApiTodayUsageTests(unittest.TestCase):
+    def setUp(self):
+        self.site = {**SITE, 'token': 'console-access-token', 'newApiUserId': '5',
+                     'usageKeys': [{'id': 'first', 'name': '本地备注', 'token': 'sk-first'}]}
+        self.now = datetime(2026, 11, 4, 16, 5, tzinfo=timezone.utc)
+        clock = patch.object(balance, 'datetime')
+        clock.start().now.return_value = self.now
+        self.addCleanup(clock.stop)
+
+    def fetch_usage(self, url, *, headers, timeout=None):
+        path = urlsplit(url).path
+        if path == '/api/usage/token':
+            name = 'gemini 文本 & 1' if headers['Authorization'] == 'Bearer sk-first' else 'second'
+            return {'code': True, 'data': {'name': name, 'total_used': 68230279}}
+        if path == '/api/log/self/stat':
+            quota = 1500000 if parse_qs(urlsplit(url).query)['token_name'] == ['gemini 文本 & 1'] else 0
+            return {'success': True, 'data': {'quota': quota}}
+        raise AssertionError('Unexpected API path')
+
+    def test_daily_query_uses_upstream_name_console_credentials_and_utc8_day(self):
+        with patch.object(balance, 'fetch_json', side_effect=self.fetch_usage) as fetch:
+            result = balance.get_token_usage(self.site)
+        data = result['keys'][0]['data']
+        self.assertEqual(data['usedQuota'], 136.460558)
+        self.assertEqual(data['todayQuota'], 1500000)
+        self.assertEqual(data['todayActualCost'], 3)
+        self.assertEqual(result['todayActualCost'], 3)
+        self.assertEqual(result['todaySuccessCount'], 1)
+        self.assertEqual(result['todayFailedCount'], 0)
+        self.assertNotIn('todayError', data)
+        stat_call = next(call for call in fetch.call_args_list if '/api/log/self/stat?' in call.args[0])
+        self.assertEqual(stat_call.kwargs, {
+            'headers': {'Authorization': 'Bearer console-access-token', 'New-Api-User': '5'},
+            'timeout': 30,
+        })
+        self.assertEqual(parse_qs(urlsplit(stat_call.args[0]).query), {
+            'token_name': ['gemini 文本 & 1'],
+            'start_timestamp': [str(int(datetime(2026, 11, 4, 16, tzinfo=timezone.utc).timestamp()))],
+            'end_timestamp': [str(int(self.now.timestamp()))],
+        })
+        self.assertEqual(data['todayRange']['timezone'], 'Asia/Shanghai')
+
+    def test_multiple_keys_use_identical_window_and_zero_daily_usage_is_success(self):
+        site = {**self.site, 'token': 'Bearer console-access-token',
+                'usageKeys': [*self.site['usageKeys'], {'id': 'second', 'name': '备注 2', 'token': 'sk-second'}]}
+        with patch.object(balance, 'fetch_json', side_effect=self.fetch_usage) as fetch:
+            result = balance.get_token_usage(site)
+        self.assertEqual(result['todaySuccessCount'], 2)
+        self.assertEqual(result['todayFailedCount'], 0)
+        self.assertEqual(result['todayActualCost'], 3)
+        self.assertEqual(result['keys'][1]['data']['todayActualCost'], 0)
+        calls = [call for call in fetch.call_args_list if '/api/log/self/stat?' in call.args[0]]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual({parse_qs(urlsplit(call.args[0]).query)['end_timestamp'][0] for call in calls},
+                         {str(int(self.now.timestamp()))})
+        self.assertTrue(all(call.kwargs['headers']['Authorization'] == 'Bearer console-access-token'
+                            for call in calls))
+
+    def test_daily_query_obeys_configured_site_timezone(self):
+        with patch.object(balance, 'fetch_json', side_effect=self.fetch_usage) as fetch:
+            result = balance.get_token_usage({**self.site, 'timezone': 'UTC'})
+        daily = result['keys'][0]['data']
+        self.assertEqual(daily['todayRange']['startTimestamp'],
+                         int(datetime(2026, 11, 4, tzinfo=timezone.utc).timestamp()))
+        self.assertEqual(daily['todayRange']['timezone'], 'UTC')
+
+    def test_duplicate_upstream_names_are_not_counted_as_separate_daily_usage(self):
+        site = {**self.site, 'usageKeys': [*self.site['usageKeys'],
+                                         {'id': 'second', 'name': '备注 2', 'token': 'sk-second'}]}
+        def fetch(url, **kwargs):
+            if '/api/log/self/stat?' in url:
+                return {'success': True, 'data': {'quota': 1000000}}
+            return {'data': {'name': 'same-name', 'total_used': 500000}}
+        with patch.object(balance, 'fetch_json', side_effect=fetch):
+            result = balance.get_token_usage(site)
+        self.assertEqual(result['successCount'], 2)
+        self.assertEqual(result['todayFailedCount'], 2)
+        self.assertIsNone(result['todayActualCost'])
+        self.assertTrue(all('相同名称' in item['data']['todayError'] for item in result['keys']))
+
+    def test_daily_failure_keeps_cumulative_data_and_reports_unknown_total(self):
+        def fetch(url, **kwargs):
+            if '/api/log/self/stat?' in url:
+                raise requests.Timeout()
+            return self.fetch_usage(url, **kwargs)
+        with patch.object(balance, 'fetch_json', side_effect=fetch):
+            result = balance.get_token_usage(self.site)
+        self.assertTrue(result['keys'][0]['ok'])
+        self.assertEqual(result['keys'][0]['data']['usedQuota'], 136.460558)
+        self.assertIn('超时', result['keys'][0]['data']['todayError'])
+        self.assertIsNone(result['todayActualCost'])
+        self.assertEqual(result['todayFailedCount'], 1)
+
+    def test_missing_console_settings_do_not_send_daily_request(self):
+        for missing in ('token', 'newApiUserId'):
+            with self.subTest(missing=missing), patch.object(balance, 'fetch_json', side_effect=self.fetch_usage) as fetch:
+                result = balance.get_token_usage({**self.site, missing: ''})
+                fetch.assert_called_once()
+                self.assertEqual(result['keys'][0]['data']['usedQuota'], 136.460558)
+                self.assertIn('已保存', result['keys'][0]['data']['todayError'])
+
+    def test_missing_upstream_name_does_not_query_all_account_logs(self):
+        with patch.object(balance, 'fetch_json', return_value={'data': {'total_used': 500000}}) as fetch:
+            result = balance.get_token_usage(self.site)
+        fetch.assert_called_once()
+        self.assertIn('name', result['keys'][0]['data']['todayError'])
+        self.assertEqual(result['keys'][0]['data']['usedQuota'], 1)
+
+    def test_daily_response_requires_success_and_valid_quota(self):
+        for response in ({'success': False}, {'data': {'quota': 500000}},
+                         {'success': True, 'data': {}},
+                         {'success': True, 'data': {'quota': 'nan'}},
+                         {'success': True, 'data': {'quota': True}}):
+            def fetch(url, **kwargs):
+                return response if '/api/log/self/stat?' in url else self.fetch_usage(url, **kwargs)
+            with self.subTest(response=response), patch.object(balance, 'fetch_json', side_effect=fetch):
+                result = balance.get_token_usage(self.site)
+                self.assertTrue(result['keys'][0]['ok'])
+                self.assertIsNone(result['keys'][0]['data']['todayActualCost'])
+                self.assertEqual(result['todayFailedCount'], 1)
+
+    def test_endpoint_uses_console_credentials_saved_on_server(self):
+        client = Client()
+        client.cookies['balance_session'] = 'admin-session'
+        with patch.object(state, 'saved_sites', [self.site]), patch.dict(
+            state.sessions, {'admin-session': {'expires_at': time.time() + 60}}, clear=True
+        ), patch.object(balance, 'fetch_json', side_effect=self.fetch_usage):
+            response = client.post('/api/usage/token', data=json.dumps({'siteId': SITE['id']}),
+                                   content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['data']['todayActualCost'], 3)
+        self.assertNotIn('console-access-token', response.content.decode())
+        self.assertNotIn('sk-first', response.content.decode())
 
 
 if __name__ == '__main__':
