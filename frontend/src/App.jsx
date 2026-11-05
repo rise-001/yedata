@@ -184,11 +184,29 @@ function Workspace({ onLogout }) {
   function queryTokenUsage(site) {
     run(`usage-${site.id}`, async () => {
       try {
-        await save();
+        const saved = await save();
         const { data } = await send('usage/token', 'POST', { siteId: site.id });
-        setUsageResults((current) => ({ ...current, [site.id]: { ok: true, data } }));
         const issues = [data.failedCount ? `${data.failedCount} 个 Key 查询失败` : '',
           data.todayFailedCount ? `${data.todayFailedCount} 个今日用量未获取` : ''].filter(Boolean);
+        const names = new Map((data.keys || []).filter((key) => key.ok && typeof key.data?.name === 'string' && key.data.name.trim())
+          .map((key) => [key.keyId, key.data.name.trim().slice(0, 80)]));
+        let renamed = false;
+        const nextSites = saved.map((item) => item.id !== site.id ? item : { ...item, usageKeys: item.usageKeys.map((key) => {
+          const name = names.get(key.id);
+          if (!name || name === key.name || !/^(?:默认 Key|Key \d+)?$/.test(key.name.trim())) return key;
+          renamed = true;
+          return { ...key, name };
+        }) });
+        if (renamed) {
+          try { await save(nextSites); }
+          catch {
+            setSites(nextSites); setDirty(true);
+            issues.push('Key 名称未保存，请点击保存配置重试');
+          }
+          const savedNames = new Map(nextSites.find((item) => item.id === site.id).usageKeys.map((key) => [key.id, key.name]));
+          data.keys = data.keys.map((key) => ({ ...key, keyName: savedNames.get(key.keyId) || key.keyName }));
+        }
+        setUsageResults((current) => ({ ...current, [site.id]: { ok: true, data } }));
         notify(issues.length ? `消耗查询完成：${issues.join('，')}` : '消耗查询完成', issues.length > 0);
       } catch (error) {
         setUsageResults((current) => ({ ...current, [site.id]: { ok: false, message: error.message } }));

@@ -14,6 +14,9 @@ function mockApi(config = {}) {
     if (path === 'login') return response(body.password === 'correct' ? { ok: true } : { ok: false, message: '管理员账号或密码错误' });
     if (state.expired) return response({ ok: false }, 401);
     if (path === 'sites' && options.method === 'PUT') {
+      if (state.rejectNameSave && body.sites.some((site) => site.usageKeys?.some((key) => key.name === 'gemini'))) {
+        return response({ ok: false, message: '保存失败' });
+      }
       state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, usageKeys, ...site }) => ({
         ...site, hasPassword: Boolean(password || site.hasPassword), hasToken: Boolean(token || site.hasToken),
         hasSessionCookie: Boolean(sessionCookie || site.hasSessionCookie),
@@ -177,7 +180,7 @@ describe('React 页面流程', () => {
   });
 
   it('New API 展示接口名称与换算后的消耗，不限额仍显示消耗金额', async () => {
-    mockApi({ sites: [{ ...initialSite, siteType: 'newapi', authMode: 'cookie', hasSessionCookie: true,
+    const { state } = mockApi({ sites: [{ ...initialSite, siteType: 'newapi', authMode: 'cookie', hasSessionCookie: true,
       newApiUserId: '5', usageKeys: [{ id: 'gemini', name: 'Key 1', hasToken: true }] }],
     usageResult: { keys: [{ keyId: 'gemini', keyName: 'Key 1', ok: true, data: {
       name: 'gemini 文本', usedQuota: 136.460558, remainingQuota: -9.73614,
@@ -192,7 +195,9 @@ describe('React 页面流程', () => {
     render(<App />); await openSiteSettings(user);
     expect(screen.getByLabelText('New-Api-User ID')).toHaveValue('5');
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
-    expect(await screen.findByText('gemini 文本 · Key 1')).toBeInTheDocument();
+    expect(await screen.findByText('gemini 文本')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key 名称 1')).toHaveValue('gemini 文本');
+    expect(state.sites[0].usageKeys[0]).toMatchObject({ id: 'gemini', name: 'gemini 文本', hasToken: true });
     expect(screen.getByText('累计消耗金额')).toBeInTheDocument();
     expect(screen.getByText('今日消耗金额')).toBeInTheDocument();
     expect(screen.getByText('今日用量：1 个成功，0 个未获取')).toBeInTheDocument();
@@ -201,6 +206,46 @@ describe('React 页面流程', () => {
     expect(screen.getAllByText('不限额')).toHaveLength(2);
     expect(screen.getByText('永不过期')).toBeInTheDocument();
     expect(screen.getByText('未限制')).toBeInTheDocument();
+  });
+
+  it.each(['默认 Key', '', '自定义备注'])('New API 查询后填入默认名称并保留自定义名称：%s', async (name) => {
+    const { state } = mockApi({ sites: [{ ...initialSite, siteType: 'newapi',
+      usageKeys: [{ id: 'saved', name, hasToken: true }, { id: 'failed', name: 'Key 2', hasToken: true }] }],
+    usageResult: { keys: [
+      { keyId: 'saved', keyName: name, ok: true, data: { name: 'gemini', todayActualCost: 0 } },
+      { keyId: 'failed', keyName: 'Key 2', ok: false, message: '查询失败' },
+    ], successCount: 1, failedCount: 1, todayActualCost: 0 } });
+    const user = userEvent.setup();
+    const { unmount } = render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    await screen.findByRole('region', { name: '令牌消耗查询结果' });
+    const expectedName = name === '自定义备注' ? name : 'gemini';
+    expect(screen.getByLabelText('Key 名称 1')).toHaveValue(expectedName);
+    expect(state.sites[0].usageKeys[0]).toMatchObject({ id: 'saved', name: expectedName, hasToken: true });
+    expect(state.sites[0].usageKeys[1].name).toBe('Key 2');
+    unmount();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: '展开', exact: true }));
+    expect(screen.getByLabelText('Key 名称 1')).toHaveValue(expectedName);
+  });
+
+  it('自动名称保存失败时保留今日消耗，并允许手动重新保存', async () => {
+    const { state } = mockApi({ rejectNameSave: true,
+      sites: [{ ...initialSite, siteType: 'newapi', usageKeys: [{ id: 'saved', name: '默认 Key', hasToken: true }] }],
+      usageResult: { keys: [{ keyId: 'saved', keyName: '默认 Key', ok: true,
+        data: { name: 'gemini', usedQuota: 100, todayActualCost: 3 } }],
+      successCount: 1, failedCount: 0, todayActualCost: 3 } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Key 名称未保存');
+    expect(screen.getByText('今日消耗金额')).toBeInTheDocument();
+    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(screen.getByLabelText('Key 名称 1')).toHaveValue('gemini');
+    expect(state.sites[0].usageKeys[0].name).toBe('默认 Key');
+    state.rejectNameSave = false;
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await waitFor(() => expect(state.sites[0].usageKeys[0].name).toBe('gemini'));
   });
 
   it('New API 今日查询失败仍显示累计消耗，并提示今日结果不完整', async () => {

@@ -108,6 +108,10 @@ test('移动端 New API 同时展示今日与累计金额及统计时区', async
   await expect(result).toContainText('今日消耗金额3');
   await expect(result).toContainText('累计消耗金额136.460558');
   await expect(result).toContainText('Asia/Shanghai');
+  await expect(page.getByLabel('Key 名称 1')).toHaveValue('gemini 文本');
+  await page.reload();
+  await page.getByRole('button', { name: '展开', exact: true }).click();
+  await expect(page.getByLabel('Key 名称 1')).toHaveValue('gemini 文本');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

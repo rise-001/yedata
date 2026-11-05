@@ -60,6 +60,8 @@ New API 今日用量使用已保存的“访问令牌 / Bearer Token”（控制
 
 余额看板和站点设置中的“进入网站”按钮会直接在新标签页打开该站点保存的接口地址。跨域网站的浏览器登录态无法由本服务通用注入；自动登录需要目标网站提供 SSO、一次性登录链接或专用换票接口。
 
+New API 查询成功后，未填写的 Key 名称以及默认的 `默认 Key`、`Key 1` 等名称会自动使用接口返回的 `name` 并保存；手动填写的自定义名称会保留。今日用量筛选始终使用接口返回的名称。
+
 ## Docker 部署
 
 在服务器安装 Docker 和 Docker Compose 后，在项目目录执行：
@@ -106,7 +108,7 @@ docker compose -f docker-compose.django.yml logs -f --tail=100 balance-watch
 
 默认访问 `http://服务器IP:3010`。如果需要修改外部端口，在 `.env` 设置 `HOST_PORT=3020` 后重新执行启动命令，此时访问 `http://服务器IP:3020`。
 
-更新代码后重新构建：
+更新代码后重新构建（仅执行 `git pull` 不会更新容器中的页面或后端）：
 
 ```bash
 git pull --ff-only
