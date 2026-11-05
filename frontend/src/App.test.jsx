@@ -27,7 +27,7 @@ function mockApi(config = {}) {
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
     if (path === 'check-many') return response({ ok: true, data: body.sites.map((site) => ({ siteId: site.id, ok: true, balance: 0, currency: 'CNY', checkedAt: '2026-10-21T02:00:00Z', ...state.checkResult })) });
-    if (path === 'usage/token') return response({ ok: true, data: state.usageResult || { name: 'production', usedQuota: 1200, remainingQuota: 3800, totalQuota: 5000, unlimitedQuota: false, expiresAt: -1, modelLimitsEnabled: true, modelLimits: ['gpt-4o'] } });
+    if (path === 'usage/token') return response({ ok: true, todayUsage: state.usageSummary, data: state.usageResult || { name: 'production', usedQuota: 1200, remainingQuota: 3800, totalQuota: 5000, unlimitedQuota: false, expiresAt: -1, modelLimitsEnabled: true, modelLimits: ['gpt-4o'] } });
     return response({ ok: true });
   });
   vi.stubGlobal('fetch', fetch);
@@ -44,11 +44,12 @@ describe('React 页面流程', () => {
   it('概览显示今日消耗并随余额同步，零消耗有效，历史与失败数据不冒充今日消耗', async () => {
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const { state, fetch } = mockApi({
-      sites: [initialSite, { ...initialSite, id: 'beta', name: 'Beta' }, { ...initialSite, id: 'gamma', name: 'Gamma' }],
+      sites: [initialSite, { ...initialSite, id: 'beta', name: 'Beta' }, { ...initialSite, id: 'gamma', name: 'Gamma' }, { ...initialSite, id: 'delta', name: 'Delta' }],
       results: {
-        alpha: { ok: true, balance: 100, todayUsage: { date, cost: 0, currency: 'CNY' } },
-        beta: { ok: true, balance: 200, todayUsage: { date: '2000-01-01', cost: 12 } },
-        gamma: { ok: false, todayUsage: { date, cost: 99 } },
+        alpha: { ok: true, balance: 100, todayUsage: { date, source: 'keys', cost: 0 } },
+        beta: { ok: true, balance: 200, todayUsage: { date: '2000-01-01', source: 'keys', cost: 12 } },
+        gamma: { ok: false, todayUsage: { date, source: 'keys', cost: 99 } },
+        delta: { ok: true, balance: 100, todayUsage: { date, cost: 88 } },
       },
     });
     render(<App />);
@@ -57,14 +58,33 @@ describe('React 页面流程', () => {
     expect(within(row('Alpha')).getByText('0.00')).toBeInTheDocument();
     expect(row('Beta').querySelector('.overview-usage strong')).toHaveTextContent('—');
     expect(row('Gamma').querySelector('.overview-usage strong')).toHaveTextContent('—');
-    state.results.alpha = { ok: true, balance: 90, todayUsage: { date, cost: 10.25, currency: 'CNY' } };
+    expect(row('Delta').querySelector('.overview-usage strong')).toHaveTextContent('—');
+    state.results.alpha = { ok: true, balance: 90, todayUsage: { date, source: 'keys', cost: 10.25, successCount: 1, failedCount: 1 } };
     fireEvent(document, new Event('visibilitychange'));
     expect(await within(row('Alpha')).findByText('10.25')).toBeInTheDocument();
+    expect(within(row('Alpha')).getByText('小计 · 1 个 Key 未获取')).toBeInTheDocument();
     expect(fetch.mock.calls.filter(([url]) => url === '/api/sites')).toHaveLength(2);
     state.results.alpha = { ok: true, balance: 90, todayUsage: null, todayUsageError: '用量接口不可用' };
     fireEvent(document, new Event('visibilitychange'));
     await waitFor(() => expect(row('Alpha').querySelector('.overview-usage strong')).toHaveTextContent('—'));
     expect(row('Alpha').querySelector('.overview-balance strong')).toHaveTextContent('90.00');
+  });
+
+  it('手动 Key 消耗查询后立即更新概览中的合计', async () => {
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    mockApi({ sites: [{ ...initialSite, usageKeys: [{ id: 'one', name: '生产', hasToken: true }] }],
+      results: { alpha: { ok: true, balance: 100 } },
+      usageResult: { keys: [{ keyId: 'one', keyName: '生产', ok: true, data: { todayActualCost: 2.75 } }], todayActualCost: 2.75, successCount: 1, failedCount: 0 },
+      usageSummary: { date, source: 'keys', cost: 2.75, successCount: 1, failedCount: 0 },
+    });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    await screen.findByRole('region', { name: '令牌消耗查询结果' });
+    await user.click(screen.getByRole('link', { name: '余额概览' }));
+    const row = screen.getByRole('button', { name: 'Alpha', exact: true }).closest('tr');
+    expect(row.querySelector('.overview-usage strong')).toHaveTextContent('2.75');
+    expect(row.querySelector('.overview-balance strong')).toHaveTextContent('100.00');
   });
 
   it('显示登录错误，并在成功登录后打开看板', async () => {

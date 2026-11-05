@@ -20,7 +20,7 @@ from monitor import state
 from monitor.adapters import (
     normalize_site, public_site, validate_site_list, with_saved_secrets,
 )
-from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom
+from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom, summarize_key_usage
 from monitor.storage import save_sites, save_upstream_sessions
 
 logger = logging.getLogger(__name__)
@@ -230,7 +230,14 @@ def api_token_usage(request: HttpRequest) -> HttpResponse:
         site = next((item for item in state.saved_sites if str(item.get('id')) == site_id), None)
         if not site:
             return _err('未找到已保存的站点配置', 404)
-        return _json({'ok': True, 'data': get_token_usage(site)})
+        queried_at = datetime.now(timezone.utc)
+        data = get_token_usage(site)
+        today_usage = summarize_key_usage(site, data, queried_at)
+        today_error = '未获取到任何 Key 的今日消耗，请检查消耗查询配置' if today_usage['cost'] is None else ''
+        previous = state.scheduled_results.get(site_id)
+        if previous is not None:
+            state.scheduled_results[site_id] = {**previous, 'todayUsage': today_usage, 'todayUsageError': today_error}
+        return _json({'ok': True, 'data': data, 'todayUsage': today_usage, 'todayUsageError': today_error})
     except Exception as exc:
         return _err(str(exc), getattr(exc, 'status', 400))
 

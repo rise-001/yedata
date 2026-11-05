@@ -185,7 +185,8 @@ function Workspace({ onLogout }) {
     run(`usage-${site.id}`, async () => {
       try {
         const saved = await save();
-        const { data } = await send('usage/token', 'POST', { siteId: site.id });
+        const { data, todayUsage, todayUsageError } = await send('usage/token', 'POST', { siteId: site.id });
+        if (todayUsage) setResults((current) => ({ ...current, [site.id]: { ...current[site.id], todayUsage, todayUsageError } }));
         const issues = [data.failedCount ? `${data.failedCount} 个 Key 查询失败` : '',
           data.todayFailedCount ? `${data.todayFailedCount} 个今日用量未获取` : ''].filter(Boolean);
         const names = new Map((data.keys || []).filter((key) => key.ok && typeof key.data?.name === 'string' && key.data.name.trim())

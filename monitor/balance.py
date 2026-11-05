@@ -141,6 +141,19 @@ def get_token_usage(site: dict):
     }
 
 
+def summarize_key_usage(site: dict, usage: dict, queried_at: datetime) -> dict:
+    """Use the same daily total and success counts as the Key usage results."""
+    cost = usage.get('todayActualCost')
+    valid = isinstance(cost, (int, float)) and not isinstance(cost, bool) and isfinite(cost)
+    return {
+        'date': day_key_of(site.get('timezone') or 'Asia/Shanghai', queried_at),
+        'source': 'keys',
+        'cost': cost if valid else None,
+        'successCount': usage.get('todaySuccessCount', int(valid)),
+        'failedCount': usage.get('todayFailedCount', int(not valid)),
+    }
+
+
 def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> dict:
     access_token = str(cfg.get('token') or '').strip()
     if access_token.lower().startswith('bearer '):
@@ -505,35 +518,14 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
     if not isinstance(balance, float) or balance != balance:  # NaN check
         raise ValueError('余额接口响应中没有有效的 balance 字段')
 
-    # Normal checks fetch today's account usage; reports may request another day.
-    queried_at = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(timezone))
-    today = queried_at.strftime('%Y-%m-%d')
-    requested_day = usage_day or today
+    # Account trend queries are only used by the existing historical report.
     usage_result = None
-    today_usage_error = ''
-    if is_newapi_site(cfg) and not usage_day:
-        try:
-            start = queried_at.replace(hour=0, minute=0, second=0, microsecond=0)
-            params = urlencode({'start_timestamp': int(start.timestamp()),
-                                'end_timestamp': int(queried_at.timestamp())})
-            raw = fetch_json(
-                url_for(base_url, '/api/log/self/stat') + '?' + params,
-                headers=auth_headers(credentials),
-            )
-            data = raw.get('data') if isinstance(raw, dict) and raw.get('success') is True else None
-            value = data.get('quota') if isinstance(data, dict) else None
-            quota = float(value) if not isinstance(value, bool) else float('nan')
-            if not isfinite(quota):
-                raise ValueError('今日用量接口未返回有效的 data.quota')
-            usage_result = {'date': today, 'cost': quota / divisor * multiplier, 'currency': currency}
-        except Exception:
-            today_usage_error = '今日消耗查询失败，请检查站点用量接口或认证信息'
-    elif cfg.get('usagePath'):
+    if usage_day and cfg.get('usagePath'):
         try:
             usage_url = url_for(base_url, cfg['usagePath'])
             sep = '&' if '?' in usage_url else '?'
             usage_url += (f'{sep}timezone={timezone}&granularity=day'
-                          f'&start_date={requested_day}&end_date={requested_day}')
+                          f'&start_date={usage_day}&end_date={usage_day}')
             usage_data = fetch_json(usage_url, headers=auth_headers(credentials, use_bearer))
             inner = usage_data.get('data') if isinstance(usage_data, dict) else usage_data
             if isinstance(inner, dict):
@@ -543,16 +535,29 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
             if isinstance(trend, list):
                 total = sum(float(pt.get('actual_cost') or 0)
                             for pt in trend
-                            if str(pt.get('date', '')).startswith(requested_day))
+                            if str(pt.get('date', '')).startswith(usage_day))
                 if not isfinite(total):
                     raise ValueError('用量接口未返回有效的消耗金额')
-                usage_result = {'date': requested_day, 'cost': total, 'currency': currency}
+                usage_result = {'date': usage_day, 'cost': total, 'currency': currency}
             else:
                 raise ValueError('用量接口未返回有效的 trend 数据')
         except Exception as exc:
-            today_usage_error = '今日消耗查询失败，请检查站点用量接口或认证信息'
             logger.error('Usage request failed for %s: %s',
                          cfg.get('name') or base_url, exc)
+
+    today_usage = None
+    today_usage_error = ''
+    if not usage_day and (is_sub2_site(cfg) or is_newapi_site(cfg)):
+        queried_at = datetime.now(dt_timezone.utc)
+        try:
+            if not get_usage_keys(cfg):
+                today_usage_error = '请先配置消耗查询 API Key'
+            else:
+                today_usage = summarize_key_usage(cfg, get_token_usage(cfg), queried_at)
+                if today_usage['cost'] is None:
+                    today_usage_error = '未获取到任何 Key 的今日消耗，请检查消耗查询配置'
+        except Exception:
+            today_usage_error = 'Key 今日消耗查询失败，请检查消耗查询配置'
 
     used_quota = float(profile.get('used_quota') or
                        _value_at_path(me_data, 'used_quota') or 0)
@@ -565,7 +570,7 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         'balanceMultiplier': multiplier,
         'currency': currency,
         'usage': usage_result,
-        'todayUsage': usage_result if requested_day == today else None,
+        'todayUsage': today_usage,
         'todayUsageError': today_usage_error,
         'usedBalance': used_quota / divisor * multiplier,
         'frozenBalance': float(profile.get('frozen_balance') or 0) / divisor * multiplier,

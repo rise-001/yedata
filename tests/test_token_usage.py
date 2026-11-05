@@ -240,6 +240,28 @@ class TokenUsageTests(unittest.TestCase):
         self.assertEqual(response.json()['data']['successCount'], 2)
         self.assertNotIn('sk-', response.content.decode())
 
+    @patch('monitor.views.get_token_usage', return_value={
+        'todayActualCost': 3.75, 'todaySuccessCount': 2, 'todayFailedCount': 1,
+    })
+    def test_manual_usage_query_updates_dashboard_summary_without_changing_balance(self, get_usage):
+        client = Client()
+        client.cookies['balance_session'] = 'admin-session'
+        previous = {'ok': True, 'balance': 99, 'checkedAt': '2026-11-05T00:00:00Z'}
+        with patch.object(state, 'saved_sites', [dict(SITE)]), patch.dict(
+            state.sessions, {'admin-session': {'expires_at': time.time() + 60}}, clear=True
+        ), patch.dict(state.scheduled_results, {SITE['id']: previous}, clear=True):
+            response = client.post('/api/usage/token', data=json.dumps({'siteId': SITE['id']}),
+                                   content_type='application/json')
+            self.assertEqual(response.status_code, 200)
+            summary = response.json()['todayUsage']
+            self.assertEqual(summary['source'], 'keys')
+            self.assertEqual(summary['cost'], 3.75)
+            self.assertEqual(summary['failedCount'], 1)
+            cached = state.scheduled_results[SITE['id']]
+            self.assertEqual(cached['todayUsage'], summary)
+            self.assertEqual(cached['balance'], 99)
+            self.assertEqual(cached['checkedAt'], previous['checkedAt'])
+
     @patch('monitor.views.get_token_usage', return_value={'usedQuota': 12})
     def test_endpoint_requires_login_and_uses_saved_site(self, get_usage):
         client = Client()

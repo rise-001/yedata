@@ -340,6 +340,7 @@ td small { font-size: 9px; }
 .overview-usage { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .overview-usage strong { color: #526c5e; font-size: 17px; font-weight: 500; }
 .overview-usage > span { margin-left: 6px; color: #7b8d7c; font-size: 10px; }
+.overview-usage-note { display: block; flex-basis: 100%; margin-top: 6px; color: #aa7563; font-size: 10px; white-space: normal; }
 .row-warning .overview-balance strong { color: #ad7a35; }
 .row-warning .overview-site { box-shadow: inset 3px 0 #d5a257; }
 .row-failed .overview-site { box-shadow: inset 3px 0 #cd8b77; }

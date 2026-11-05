@@ -170,7 +170,7 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
       { ...site, id: 'epsilon', name: '已归档站点', enabled: false, baseUrl: 'https://archive.example.com' },
     ],
     results: {
-      alpha: { ok: true, balance: 1280.36, currency: 'CNY', todayUsage: { date, cost: 23.45, currency: 'CNY' }, checkedAt },
+      alpha: { ok: true, balance: 1280.36, currency: 'CNY', todayUsage: { date, source: 'keys', cost: 23.45, successCount: 1, failedCount: 1 }, checkedAt },
       beta: { ok: true, balance: 4.5, currency: 'USD', checkedAt },
       gamma: { ok: false, message: '登录会话已过期，请检查认证信息', checkedAt },
       epsilon: { ok: true, balance: 320, currency: 'CNY', checkedAt },
@@ -183,6 +183,7 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await expect(rows.getByText('4.50')).toBeVisible();
   await expect(page.getByRole('columnheader', { name: '今日实时消耗' })).toBeVisible();
   await expect(rows.locator('.overview-usage').getByText('23.45')).toBeVisible();
+  await expect(rows.locator('.overview-usage').getByText('小计 · 1 个 Key 未获取')).toBeVisible();
   const totals = page.getByRole('region', { name: '可用余额总览' });
   await expect(totals.locator('.balance-total').filter({ hasText: 'CNY' })).toContainText('1,280.36');
   await expect(totals.locator('.balance-total').filter({ hasText: 'USD' })).toContainText('4.50');
