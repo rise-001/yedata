@@ -13,7 +13,9 @@ SITE = {
 }
 RESULT = {
     'balance': 10, 'currency': 'CNY', 'displayName': 'Account',
-    'email': 'shared@example.com', 'usage': {'cost': 2},
+    'email': 'shared@example.com', 'usage': {
+        'date': '2026-11-04', 'source': 'keys', 'cost': 2, 'successCount': 1, 'failedCount': 0,
+    },
 }
 
 
@@ -117,13 +119,16 @@ class NotificationTests(unittest.TestCase):
     @patch.object(balance, 'get_balance', return_value=RESULT)
     @patch.object(balance, 'record_daily_usage')
     @patch.object(balance, 'send_wecom')
-    def test_daily_report_returns_delivery_result_and_filters_timezone(self, send, record, get):
+    @patch.object(balance, 'day_key_of', return_value='2026-11-05')
+    def test_daily_report_returns_delivery_result_and_filters_timezone(self, day, send, record, get):
         state.saved_sites.append({**SITE, 'id': 'beta', 'timezone': 'UTC'})
         self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
         get.assert_called_once()
         self.assertEqual(get.call_args.args[0]['id'], 'alpha')
         report_text = send.call_args.args[1]
-        self.assertIn('Alpha**：10.00，昨日用量 2.00', report_text)
+        self.assertEqual(get.call_args.kwargs, {'usage_day': '2026-11-04'})
+        self.assertIn('Alpha**：10.00，昨日 Key 消耗 2.00', report_text)
+        self.assertIn('2026-11-04 Key 总消耗**：2.00', report_text)
         self.assertNotIn('CNY', report_text)
         self.assertNotIn('阈值', report_text)
         send.side_effect = ValueError('send failed')

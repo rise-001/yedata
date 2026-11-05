@@ -92,12 +92,17 @@ class BalanceTodayUsageTests(unittest.TestCase):
             'successCount': 1, 'failedCount': 0,
         })
 
-    def test_report_historical_usage_stays_separate_from_today_keys(self):
-        with patch.object(balance, 'fetch_json', side_effect=[
-            {'data': {'balance': 100}},
-            {'data': {'trend': [{'date': '2026-11-04', 'actual_cost': 12}]}},
-        ]), patch.object(balance, 'get_token_usage') as keys:
+    def test_report_historical_keys_stay_separate_from_today_keys(self):
+        def fetch(url, **kwargs):
+            if urlsplit(url).path == '/v1/usage':
+                return {'usage': {'today': {'actual_cost': 999}}, 'daily_usage': [
+                    {'date': '2026-11-04', 'actual_cost': 6},
+                    {'date': '2026-11-05', 'actual_cost': 999},
+                ]}
+            return self.fetch(url, **kwargs)
+        with patch.object(balance, 'fetch_json', side_effect=fetch), patch.object(balance, 'get_token_usage') as keys:
             result = balance.get_balance(self.site, usage_day='2026-11-04')
         keys.assert_not_called()
         self.assertEqual(result['usage']['cost'], 12)
+        self.assertEqual(result['usage']['source'], 'keys')
         self.assertIsNone(result['todayUsage'])

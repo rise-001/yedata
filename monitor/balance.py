@@ -6,7 +6,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from math import isfinite
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from datetime import timezone as dt_timezone
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -68,6 +68,23 @@ def fetch_json(url: str, *, method: str = 'GET', headers: dict | None = None,
     return {'data': data, 'set_cookies': [set_cookie] if set_cookie else [], 'authorization': auth_header}
 
 
+def _usage_error_message(cfg: dict, keys: list[dict], exc: Exception) -> str:
+    if isinstance(exc, requests.Timeout):
+        return '用量接口请求超时，请稍后重试'
+    if isinstance(exc, requests.RequestException):
+        return '无法连接用量接口，请稍后重试'
+    message = str(exc)
+    sensitive_values = [key['token'] for key in keys]
+    sensitive_values.extend(str(cfg.get(field) or '').strip()
+                            for field in ('token', 'password', 'sessionCookie'))
+    for value in sensitive_values:
+        if value.lower().startswith('bearer '):
+            value = value[7:].strip()
+        if value:
+            message = message.replace(value, '[已隐藏]')
+    return message
+
+
 def get_token_usage(site: dict):
     """Query each saved key independently; keep the legacy single-key response."""
     cfg = site_config(site)
@@ -79,20 +96,7 @@ def get_token_usage(site: dict):
     queried_at = datetime.now(dt_timezone.utc)
 
     def error_message(exc):
-        if isinstance(exc, requests.Timeout):
-            return '用量接口请求超时，请稍后重试'
-        if isinstance(exc, requests.RequestException):
-            return '无法连接用量接口，请稍后重试'
-        message = str(exc)
-        sensitive_values = [key['token'] for key in keys]
-        sensitive_values.extend(str(cfg.get(field) or '').strip()
-                                for field in ('token', 'password', 'sessionCookie'))
-        for value in sensitive_values:
-            if value.lower().startswith('bearer '):
-                value = value[7:].strip()
-            if value:
-                message = message.replace(value, '[已隐藏]')
-        return message
+        return _usage_error_message(cfg, keys, exc)
 
     def query(key):
         try:
@@ -154,20 +158,111 @@ def summarize_key_usage(site: dict, usage: dict, queried_at: datetime) -> dict:
     }
 
 
+def get_key_usage_for_day(site: dict, usage_day: str) -> dict:
+    """Fetch a full historical day for only the configured consumption keys."""
+    cfg = site_config(site)
+    if not (is_sub2_site(cfg) or is_newapi_site(cfg)):
+        raise ValueError('Key 昨日消耗仅支持 Sub2 和 New API 站点')
+    keys = get_usage_keys(cfg, require_tokens=True)
+    if not keys:
+        raise ValueError('请先配置消耗查询 API Key')
+    queried_at = datetime.now(dt_timezone.utc)
+    day = date.fromisoformat(usage_day)
+    today = date.fromisoformat(day_key_of(cfg.get('timezone') or 'Asia/Shanghai', queried_at))
+    if day >= today:
+        raise ValueError('历史 Key 消耗只能查询已结束的日期')
+
+    def query(key):
+        name = ''
+        try:
+            if is_sub2_site(cfg):
+                cost = _get_sub2_daily_usage(cfg, key['token'], usage_day, (today - day).days + 1)
+            else:
+                name = _get_token_usage(cfg, key['token'])['name']
+                cost = _get_newapi_daily_usage(cfg, name, queried_at, usage_day=usage_day)['cost']
+            return {'name': name, 'cost': cost, 'error': ''}
+        except Exception as exc:
+            return {'name': name, 'cost': None, 'error': _usage_error_message(cfg, keys, exc)}
+
+    with ThreadPoolExecutor(max_workers=min(5, len(keys))) as pool:
+        results = list(pool.map(query, keys))
+    if not is_sub2_site(cfg):
+        names = [item['name'] for item in results if item['name']]
+        duplicates = {name for name in names if names.count(name) > 1}
+        for item in results:
+            if item['name'] in duplicates:
+                item.update(cost=None, error='多个 Key 返回相同名称，请先在上游设置不同名称')
+    costs = [item['cost'] for item in results if item['cost'] is not None]
+    total = sum(costs) if costs else None
+    if total is not None and not isfinite(total):
+        raise ValueError('Key 历史日用量合计无效')
+    return {
+        'date': usage_day, 'source': 'keys', 'cost': total,
+        'successCount': len(costs), 'failedCount': len(keys) - len(costs),
+        'error': '；'.join(dict.fromkeys(item['error'] for item in results if item['error'])),
+    }
+
+
+def _get_sub2_daily_usage(cfg: dict, token: str, usage_day: str, days: int) -> float:
+    if days > 90:
+        raise ValueError('Sub2 Key 历史消耗最多查询最近 90 天')
+    params = urlencode({'days': days, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
+    raw = fetch_json(
+        url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
+        headers={'Authorization': f'Bearer {token}'}, timeout=20,
+    )
+    inner = raw.get('data') if isinstance(raw, dict) else None
+    data = inner if isinstance(inner, dict) else raw
+    points = data.get('daily_usage') if isinstance(data, dict) else None
+    if not isinstance(points, list):
+        raise ValueError('上游未返回 Key 的历史日用量 daily_usage，请确认上游版本支持')
+    total = 0.0
+    for point in points:
+        if not isinstance(point, dict) or not isinstance(point.get('date'), str):
+            raise ValueError('Key 历史日用量数据格式无效')
+        point_day = date.fromisoformat(point['date'][:10]).isoformat()
+        if point_day != usage_day:
+            continue
+        value = point.get('actual_cost')
+        try:
+            cost = float(value) if not isinstance(value, bool) else float('nan')
+        except (TypeError, ValueError):
+            cost = float('nan')
+        if not isfinite(cost):
+            raise ValueError('Key 历史日用量未返回有效的 actual_cost')
+        total += cost
+    if not isfinite(total):
+        raise ValueError('Key 历史日用量合计无效')
+    return total
+
+
 def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> dict:
+    usage = _get_newapi_daily_usage(cfg, key_name, queried_at)
+    return {'todayQuota': usage['quota'], 'todayActualCost': usage['cost'],
+            'todayRange': usage['range']}
+
+
+def _get_newapi_daily_usage(cfg: dict, key_name: str, queried_at: datetime,
+                          *, usage_day: str | None = None) -> dict:
+    label = '当日' if usage_day else '今日'
     access_token = str(cfg.get('token') or '').strip()
     if access_token.lower().startswith('bearer '):
         access_token = access_token[7:].strip()
     user_id = str(cfg.get('newApiUserId') or '').strip()
     if not access_token or not user_id:
-        raise ValueError('今日用量需要站点已保存的访问令牌 / Bearer Token 和 New-Api-User ID')
+        raise ValueError(f'{label}用量需要站点已保存的访问令牌 / Bearer Token 和 New-Api-User ID')
     if not key_name:
-        raise ValueError('令牌接口未返回 name，无法按 Key 名称查询今日用量')
+        raise ValueError(f'令牌接口未返回 name，无法按 Key 名称查询{label}用量')
 
     zone = str(cfg.get('timezone') or 'Asia/Shanghai')
     now = queried_at.astimezone(ZoneInfo(zone))
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    start_timestamp, end_timestamp = int(start.timestamp()), int(now.timestamp())
+    end = now
+    if usage_day:
+        day = date.fromisoformat(usage_day)
+        start = start.replace(year=day.year, month=day.month, day=day.day)
+        end = start + timedelta(days=1) - timedelta(seconds=1)
+    start_timestamp, end_timestamp = int(start.timestamp()), int(end.timestamp())
     params = urlencode({'token_name': key_name, 'start_timestamp': start_timestamp,
                         'end_timestamp': end_timestamp})
     raw = fetch_json(
@@ -176,7 +271,7 @@ def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> d
         timeout=30,
     )
     if not isinstance(raw, dict) or raw.get('success') is not True:
-        raise ValueError('今日用量接口未确认查询成功')
+        raise ValueError(f'{label}用量接口未确认查询成功')
     data = raw.get('data')
     value = data.get('quota') if isinstance(data, dict) else None
     try:
@@ -184,10 +279,10 @@ def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> d
     except (TypeError, ValueError):
         quota = float('nan')
     if not isfinite(quota):
-        raise ValueError('今日用量接口未返回有效的 data.quota')
-    return {'todayQuota': quota, 'todayActualCost': quota / 500000,
-            'todayRange': {'startTimestamp': start_timestamp, 'endTimestamp': end_timestamp,
-                           'timezone': zone}}
+        raise ValueError(f'{label}用量接口未返回有效的 data.quota')
+    return {'quota': quota, 'cost': quota / 500000,
+            'range': {'startTimestamp': start_timestamp, 'endTimestamp': end_timestamp,
+                      'timezone': zone}}
 
 
 def _get_token_usage(cfg: dict, token: str) -> dict:
@@ -518,32 +613,16 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
     if not isinstance(balance, float) or balance != balance:  # NaN check
         raise ValueError('余额接口响应中没有有效的 balance 字段')
 
-    # Account trend queries are only used by the existing historical report.
+    # Reports use the configured keys for the requested full day, never account totals.
     usage_result = None
-    if usage_day and cfg.get('usagePath'):
+    usage_error = ''
+    if usage_day:
         try:
-            usage_url = url_for(base_url, cfg['usagePath'])
-            sep = '&' if '?' in usage_url else '?'
-            usage_url += (f'{sep}timezone={timezone}&granularity=day'
-                          f'&start_date={usage_day}&end_date={usage_day}')
-            usage_data = fetch_json(usage_url, headers=auth_headers(credentials, use_bearer))
-            inner = usage_data.get('data') if isinstance(usage_data, dict) else usage_data
-            if isinstance(inner, dict):
-                trend = inner.get('trend')
-            else:
-                trend = None
-            if isinstance(trend, list):
-                total = sum(float(pt.get('actual_cost') or 0)
-                            for pt in trend
-                            if str(pt.get('date', '')).startswith(usage_day))
-                if not isfinite(total):
-                    raise ValueError('用量接口未返回有效的消耗金额')
-                usage_result = {'date': usage_day, 'cost': total, 'currency': currency}
-            else:
-                raise ValueError('用量接口未返回有效的 trend 数据')
-        except Exception as exc:
-            logger.error('Usage request failed for %s: %s',
-                         cfg.get('name') or base_url, exc)
+            usage_result = get_key_usage_for_day(cfg, usage_day)
+            usage_error = usage_result.get('error', '')
+        except Exception:
+            usage_error = ('请先配置消耗查询 API Key' if not cfg.get('usageKeys') and not cfg.get('usageToken')
+                           else 'Key 昨日消耗查询失败，请检查消耗查询配置')
 
     today_usage = None
     today_usage_error = ''
@@ -570,6 +649,7 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         'balanceMultiplier': multiplier,
         'currency': currency,
         'usage': usage_result,
+        'usageError': usage_error,
         'todayUsage': today_usage,
         'todayUsageError': today_usage_error,
         'usedBalance': used_quota / divisor * multiplier,
@@ -756,6 +836,7 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
     usage_totals: dict[str, float] = {}
     ok_count = 0
     usage_known = 0
+    usage_incomplete = False
 
     for site in enabled_sites:
         site_name = str(site.get('name') or site.get('baseUrl') or '未命名站点').strip()
@@ -765,18 +846,22 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
             ok_count += 1
             currency = result.get('currency', '')
             amount = f'{result["balance"]:.2f}'
-            cfg = site_config(site)
-            yesterday_usage = (result['usage']['cost'] if result.get('usage')
-                               else (None if cfg.get('usagePath')
-                                     else usage_for_day(str(site.get('id', '')), yesterday)))
+            usage = result.get('usage') or {}
+            yesterday_usage = usage.get('cost') if (usage.get('source') == 'keys'
+                                                   and usage.get('date') == yesterday) else None
+            missing_keys = usage.get('failedCount', 0)
+            usage_incomplete |= yesterday_usage is None or missing_keys > 0
             if yesterday_usage is not None:
                 usage_known += 1
                 usage_totals[currency] = usage_totals.get(currency, 0) + yesterday_usage
             balance_totals[currency] = balance_totals.get(currency, 0) + result['balance']
-            usage_text = ('昨日用量未知（需连续运行两天）' if yesterday_usage is None
-                          else f'昨日用量 {yesterday_usage:.2f}')
+            usage_text = (f'昨日 Key 消耗未获取（{result.get("usageError") or "请检查消耗查询配置"}）'
+                          if yesterday_usage is None else f'昨日 Key 消耗 {yesterday_usage:.2f}')
+            if missing_keys:
+                usage_text += f'（{"成功项小计，" if yesterday_usage is not None else ""}{missing_keys} 个 Key 未获取）'
             lines.append(f'> **{site_name}**：{amount}，{usage_text}')
         except Exception as exc:
+            usage_incomplete = True
             lines.append(f'> ❌ **{site_name}**：查询失败 - {str(exc) or "未知错误"}')
 
     def sum_text(totals: dict) -> str:
@@ -797,7 +882,8 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
         *lines,
         f'> 共 {len(enabled_sites)} 个站点{"，" + str(failed) + " 个查询失败" if failed else ""}',
         f'> **总余额**：{sum_text(balance_totals) or "--"}',
-        f'> **{yesterday} 总用量**：{"暂无数据" if not usage_known else sum_text(usage_totals)}',
+        f'> **{yesterday} Key 总消耗**：{"暂无数据" if not usage_known else sum_text(usage_totals)}'
+        + ('（仅已获取 Key 的小计）' if usage_known and usage_incomplete else ''),
     ])
 
     try:
