@@ -91,6 +91,14 @@ export function mergeResults(current, incoming) {
   return merged;
 }
 
+export function getTodayUsage(site, result) {
+  if (!result?.ok || result.todayUsage?.source !== 'keys') return null;
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: site.timezone || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return result.todayUsage.date === today ? result.todayUsage : null;
+}
+
 export const formatBalance = (value) => value == null || !Number.isFinite(Number(value)) ? '—'
   : Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const formatTime = (value) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未检查';

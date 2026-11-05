@@ -88,6 +88,46 @@ test('移动端 Sub2 多 Key 查询显示今日使用金额和部分失败', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+for (const siteType of ['sub2', 'newapi']) {
+  test(`${siteType} 多 Key 结果以卡片排列，窄屏自动换行`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    const costs = [65.951149, 154.470907, 43.224011, 0.000068];
+    const keys = costs.map((cost, index) => ({
+      keyId: `key-${index}`, keyName: `Key ${index + 1}`, ok: true,
+      data: { todayActualCost: cost, usedQuota: cost * 10, remainingQuota: 100, totalQuota: 200,
+        unlimitedQuota: false, expiresAt: -1, modelLimitsEnabled: false },
+    }));
+    await mockApi(page, { sites: [{ ...site, siteType,
+      usageKeys: keys.map((key) => ({ id: key.keyId, name: key.keyName, hasToken: true })),
+    }], usageResult: { keys, successCount: 4, failedCount: 0,
+      todayActualCost: costs.reduce((total, cost) => total + cost, 0) } });
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+    await page.getByRole('button', { name: '消耗查询', exact: true }).click();
+    const result = page.getByRole('region', { name: '令牌消耗查询结果' });
+    const cards = result.getByRole('article');
+    await expect(cards).toHaveCount(4);
+    await page.getByRole('button', { name: '关闭提示' }).click();
+    await expect(cards.nth(3)).toContainText('0.000068');
+    const columns = await cards.evaluateAll((items) => items.filter((item) => item.offsetTop === items[0].offsetTop).length);
+    expect(columns).toBe(siteType === 'sub2' ? 4 : 3);
+    await result.screenshot({ path: testInfo.outputPath('multi-key-desktop.png') });
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      const bounds = await cards.evaluateAll((items) => items.map((item) => ({ x: item.getBoundingClientRect().x, width: item.getBoundingClientRect().width })));
+      expect(bounds.every((item) => item.x === bounds[0].x && item.width === bounds[0].width)).toBe(true);
+      const amountLines = await result.locator('.usage-primary dd').evaluateAll((items) => items.map((item) => {
+        const range = document.createRange();
+        range.selectNodeContents(item);
+        return range.getClientRects().length;
+      }));
+      expect(amountLines.every((lines) => lines === 1)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+    await result.screenshot({ path: testInfo.outputPath('multi-key-mobile.png') });
+  });
+}
+
 test('移动端 New API 同时展示今日与累计金额及统计时区', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApi(page, { sites: [{ ...site, siteType: 'newapi', newApiUserId: '5',
@@ -188,6 +228,10 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await expect(totals.locator('.balance-total').filter({ hasText: 'CNY' })).toContainText('1,280.36');
   await expect(totals.locator('.balance-total').filter({ hasText: 'USD' })).toContainText('4.50');
   await expect(totals).toContainText('已汇总 2 / 4 个启用站点');
+  const usageTotals = page.getByRole('region', { name: '今日总消耗' });
+  await expect(usageTotals.locator('.balance-total')).toContainText('23.45');
+  await expect(usageTotals).toContainText('已汇总 1 / 4 个启用站点');
+  await expect(usageTotals).toContainText('部分数据未获取，当前为成功项小计');
   const totalRow = page.locator('.overview-total-row');
   await expect(totalRow).toContainText('合计余额');
   await expect(totalRow).toContainText('1,280.36');
@@ -212,6 +256,7 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await expect(rows.locator('.overview-usage').getByText('23.45')).toBeVisible();
+    await expect(usageTotals.locator('.balance-total')).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     await expect(page.getByRole('button', { name: '添加站点', exact: true })).toBeVisible();

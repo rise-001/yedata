@@ -59,15 +59,45 @@ describe('React 页面流程', () => {
     expect(row('Beta').querySelector('.overview-usage strong')).toHaveTextContent('—');
     expect(row('Gamma').querySelector('.overview-usage strong')).toHaveTextContent('—');
     expect(row('Delta').querySelector('.overview-usage strong')).toHaveTextContent('—');
+    const totals = screen.getByRole('region', { name: '今日总消耗' });
+    expect(totals.querySelector('dd')).toHaveTextContent('0.00');
+    expect(totals).toHaveTextContent('已汇总 1 / 4 个启用站点');
     state.results.alpha = { ok: true, balance: 90, todayUsage: { date, source: 'keys', cost: 10.25, successCount: 1, failedCount: 1 } };
     fireEvent(document, new Event('visibilitychange'));
     expect(await within(row('Alpha')).findByText('10.25')).toBeInTheDocument();
     expect(within(row('Alpha')).getByText('小计 · 1 个 Key 未获取')).toBeInTheDocument();
+    expect(totals.querySelector('dd')).toHaveTextContent('10.25');
+    expect(totals).toHaveTextContent('部分数据未获取，当前为成功项小计');
+    expect(totals).toHaveTextContent('1 个 Key 未获取');
     expect(fetch.mock.calls.filter(([url]) => url === '/api/sites')).toHaveLength(2);
     state.results.alpha = { ok: true, balance: 90, todayUsage: null, todayUsageError: '用量接口不可用' };
     fireEvent(document, new Event('visibilitychange'));
     await waitFor(() => expect(row('Alpha').querySelector('.overview-usage strong')).toHaveTextContent('—'));
     expect(row('Alpha').querySelector('.overview-balance strong')).toHaveTextContent('90.00');
+    expect(totals).toHaveTextContent('等待站点返回今日消耗数据');
+    expect(totals.querySelector('dd')).toBeNull();
+  });
+
+  it('今日总消耗按币种相加，忽略停用站点和无效金额，筛选不改变总额', async () => {
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const usage = (cost) => ({ ok: true, balance: 100, todayUsage: { date, source: 'keys', cost } });
+    mockApi({
+      sites: [initialSite, { ...initialSite, id: 'beta', name: 'Beta' },
+        { ...initialSite, id: 'usd', name: 'USD', currency: 'USD' },
+        { ...initialSite, id: 'disabled', enabled: false },
+        { ...initialSite, id: 'invalid' }],
+      results: { alpha: usage(1.25), beta: usage(2.75), usd: usage(3.5), disabled: usage(99), invalid: usage('invalid') },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    const totals = await screen.findByRole('region', { name: '今日总消耗' });
+    const currencies = totals.querySelectorAll('.balance-total');
+    expect(currencies).toHaveLength(2);
+    expect(currencies[0]).toHaveTextContent('CNY4.00');
+    expect(currencies[1]).toHaveTextContent('USD3.50');
+    expect(totals).toHaveTextContent('已汇总 3 / 4 个启用站点');
+    await user.type(screen.getByRole('searchbox', { name: '搜索站点' }), 'Beta');
+    expect(totals.querySelector('dd')).toHaveTextContent('4.00');
   });
 
   it('手动 Key 消耗查询后立即更新概览中的合计', async () => {
@@ -85,6 +115,7 @@ describe('React 页面流程', () => {
     const row = screen.getByRole('button', { name: 'Alpha', exact: true }).closest('tr');
     expect(row.querySelector('.overview-usage strong')).toHaveTextContent('2.75');
     expect(row.querySelector('.overview-balance strong')).toHaveTextContent('100.00');
+    expect(screen.getByRole('region', { name: '今日总消耗' }).querySelector('dd')).toHaveTextContent('2.75');
   });
 
   it('显示登录错误，并在成功登录后打开看板', async () => {

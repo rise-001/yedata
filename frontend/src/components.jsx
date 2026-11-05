@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, GripVertical, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
-import { formatBalance, formatInterval, formatTime, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
+import { formatBalance, formatInterval, formatTime, getTodayUsage, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
   return <div className="brand"><span className="brand-mark">Y</span><span>余额哨兵<small>BALANCE WATCH</small></span></div>;
@@ -26,18 +26,25 @@ function TokenUsageResults({ result, isSub2 }) {
   const todayFailed = usage?.todayFailedCount ?? usage?.failedCount;
   const rangeTime = (timestamp, zone) => new Date(timestamp * 1000).toLocaleString('zh-CN', { timeZone: zone, hour12: false });
   return <section className={`token-usage ${result.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
-    <div><strong>令牌消耗</strong><small>{result.ok
+    <header className="token-usage-heading"><strong><Activity size={15} aria-hidden="true" />令牌消耗</strong><small>{result.ok
       ? usage?.keys ? `${usage.successCount} 个成功，${usage.failedCount} 个失败` : '刚刚查询'
-      : result.message}</small></div>
+      : result.message}</small></header>
     {result.ok && <>
-      {usage?.keys && <p className="usage-total">{todayFailed ? '今日使用金额小计（仅成功项）' : '今日使用金额合计'}：<strong>{amount(usage.todayActualCost)}</strong></p>}
-      {usage?.todaySuccessCount != null && <p className="usage-total">今日用量：{usage.todaySuccessCount} 个成功，{usage.todayFailedCount} 个未获取</p>}
-      {keys.map((key) => <article className="usage-key-result" key={key.keyId} aria-label={`${key.keyName} 查询结果`}>
-        <strong>{key.data?.name || key.keyName}{key.data?.name && key.data.name !== key.keyName ? ` · ${key.keyName}` : ''}</strong>
+      {usage?.keys && <div className="usage-summary-bar">
+        <p className="usage-total">{todayFailed ? '今日使用金额小计（仅成功项）' : '今日使用金额合计'}：<strong>{amount(usage.todayActualCost)}</strong></p>
+        {usage.todaySuccessCount != null && <p className="usage-today-status">今日用量：{usage.todaySuccessCount} 个成功，{usage.todayFailedCount} 个未获取</p>}
+      </div>}
+      <div className={`usage-key-results ${isSub2 ? 'usage-results-sub2' : 'usage-results-newapi'}`}>
+      {keys.map((key) => <article className={`usage-key-result ${!key.ok ? 'usage-key-failed' : ''}`} key={key.keyId} aria-label={`${key.keyName} 查询结果`}>
+        <header className="usage-key-heading"><strong>{key.data?.name || key.keyName}{key.data?.name && key.data.name !== key.keyName ? ` · ${key.keyName}` : ''}</strong>
+          <span className={`usage-key-status ${!key.ok || key.data?.todayError ? 'is-incomplete' : ''}`}>
+            {!key.ok || key.data?.todayError ? <TriangleAlert size={12} aria-hidden="true" /> : <CircleCheck size={12} aria-hidden="true" />}
+            {!key.ok ? '查询失败' : key.data?.todayError ? '今日未获取' : '已获取'}
+          </span></header>
         {!key.ok ? <p className="error-text">{key.message}</p> : isSub2
-          ? <dl className="token-usage-grid"><div><dt>今日使用金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div></dl>
+          ? <dl className="token-usage-grid"><div className="usage-primary"><dt>今日使用金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div></dl>
           : <dl className="token-usage-grid">
-            <div><dt>今日消耗金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div>
+            <div className="usage-primary"><dt>今日消耗金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div>
             <div><dt>累计消耗金额</dt><dd>{amount(key.data.usedQuota)}</dd></div>
             <div><dt>剩余金额</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.remainingQuota)}</dd></div>
             <div><dt>总金额</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.totalQuota)}</dd></div>
@@ -45,8 +52,9 @@ function TokenUsageResults({ result, isSub2 }) {
             <div className="wide"><dt>模型限制</dt><dd>{key.data.modelLimitsEnabled ? (key.data.modelLimits?.length ? key.data.modelLimits.join('、') : '已启用') : '未限制'}</dd></div>
           </dl>}
         {key.ok && key.data.todayError && <p className="error-text">今日用量未获取：{key.data.todayError}</p>}
-        {key.ok && key.data.todayRange && <p>统计范围：{rangeTime(key.data.todayRange.startTimestamp, key.data.todayRange.timezone)} 至 {rangeTime(key.data.todayRange.endTimestamp, key.data.todayRange.timezone)}（{key.data.todayRange.timezone}）</p>}
+        {key.ok && key.data.todayRange && <p className="usage-time-range">统计范围：{rangeTime(key.data.todayRange.startTimestamp, key.data.todayRange.timezone)} 至 {rangeTime(key.data.todayRange.endTimestamp, key.data.todayRange.timezone)}（{key.data.todayRange.timezone}）</p>}
       </article>)}
+      </div>
     </>}
   </section>;
 }
@@ -138,11 +146,21 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
   const enabled = sites.filter((site) => site.enabled).length;
   const pending = statuses.filter((status) => status.kind === 'pending').length;
   const balanceTotals = new Map();
+  const usageTotals = new Map();
   let countedSites = 0;
+  let usageCountedSites = 0;
+  let usageFailedKeys = 0;
   for (const site of sites) {
     const result = results[site.id];
-    if (!site.enabled || !result?.ok || result.balance == null || !Number.isFinite(Number(result.balance))) continue;
-    const currency = String(result.currency || site.currency || '').trim() || '未标注币种';
+    if (!site.enabled) continue;
+    const currency = String(result?.currency || site.currency || '').trim() || '未标注币种';
+    const usage = getTodayUsage(site, result);
+    usageFailedKeys += usage?.failedCount || 0;
+    if (usage?.cost != null && Number.isFinite(Number(usage.cost))) {
+      usageTotals.set(currency, (usageTotals.get(currency) || 0) + Number(usage.cost));
+      usageCountedSites += 1;
+    }
+    if (!result?.ok || result.balance == null || !Number.isFinite(Number(result.balance))) continue;
     balanceTotals.set(currency, (balanceTotals.get(currency) || 0) + Number(result.balance));
     countedSites += 1;
   }
@@ -185,6 +203,17 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
         </dl> : <div className="balance-summary-empty"><strong>—</strong><p>{enabled ? '等待站点返回余额数据' : '启用站点后，在这里掌握总余额'}</p></div>}
         <div className="balance-summary-footer"><span>已汇总 <strong>{countedSites}</strong> / {enabled} 个启用站点</span><span><ShieldCheck size={14} aria-hidden="true" />仅统计查询成功的站点</span></div>
       </section>
+      <section className="balance-summary usage-summary" aria-labelledby="usage-summary-title">
+        <div className="balance-summary-header"><span className="balance-summary-icon"><Activity size={22} strokeWidth={1.6} aria-hidden="true" /></span><span className="balance-summary-tag"><Layers3 size={13} aria-hidden="true" />按币种汇总</span></div>
+        <div className="balance-summary-heading"><span>TODAY'S SPENDING</span><h2 id="usage-summary-title">今日总消耗</h2></div>
+        {usageTotals.size > 0 ? <>
+          <dl className={`balance-totals ${usageTotals.size > 1 ? 'multiple-currencies' : ''}`}>
+            {[...usageTotals].map(([currency, amount]) => <div className="balance-total" key={currency}><dt>{currency}</dt><dd>{formatBalance(amount)}</dd></div>)}
+          </dl>
+          {(usageCountedSites < enabled || usageFailedKeys > 0) && <p className="usage-summary-note">部分数据未获取，当前为成功项小计</p>}
+        </> : <div className="balance-summary-empty"><strong>—</strong><p>{enabled ? '等待站点返回今日消耗数据' : '启用站点后，在这里掌握今日总消耗'}</p></div>}
+        <div className="balance-summary-footer"><span>已汇总 <strong>{usageCountedSites}</strong> / {enabled} 个启用站点</span><span><ShieldCheck size={14} aria-hidden="true" />{usageFailedKeys > 0 ? `${usageFailedKeys} 个 Key 未获取` : '仅统计今日已获取的消耗'}</span></div>
+      </section>
       <section className="overview-metrics" aria-label="监控统计">{summary.map(({ title, value, hint, Icon, kind }) =>
         <article key={title} className={`overview-metric metric-${kind}`}>
           <div className="metric-heading"><span>{title}</span><span className="metric-icon"><Icon size={19} strokeWidth={1.7} aria-hidden="true" /></span></div>
@@ -210,8 +239,7 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
                 const status = siteStatus(site, result);
                 const currency = result?.currency || site.currency;
                 const siteName = site.name || '未命名站点';
-                const today = new Intl.DateTimeFormat('en-CA', { timeZone: site.timezone || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-                const todayUsage = result?.ok && result.todayUsage?.source === 'keys' && result.todayUsage.date === today ? result.todayUsage : null;
+                const todayUsage = getTodayUsage(site, result);
                 return <tr key={site.id} className={`overview-row row-${status.kind}`}>
                   <td className="overview-site" data-label="站点"><span className={`site-avatar avatar-${site.siteType}`} aria-hidden="true">{siteName.trim().charAt(0).toLocaleUpperCase()}</span><div className="overview-site-info"><button className="overview-site-link" onClick={() => onEdit(site.id)}>{siteName}</button><span className="overview-site-meta"><span className="site-type-tag">{typeNames[site.siteType] || '自动识别'}</span><span className="overview-site-url" title={site.baseUrl}>{site.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span></span></div></td>
                   <td className="overview-balance" data-label="可用余额"><strong>{result?.ok ? formatBalance(result.balance) : '—'}</strong><span>{currency || '—'}</span></td>
