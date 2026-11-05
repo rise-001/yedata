@@ -91,7 +91,14 @@ function Workspace({ onLogout }) {
 
   function navigate(next) { setView(next); history.replaceState(null, '', `/#${next}`); }
   function edit(id) { setSelected(id); navigate('sites'); }
-  function change(id, update) { if (operation.current) return; setSites((current) => current.map((site) => site.id === id ? { ...site, ...update } : site)); setDirty(true); }
+  function change(id, update) {
+    if (operation.current) return;
+    setSites((current) => current.map((site) => site.id === id ? { ...site, ...update } : site));
+    if ('usageKeys' in update || 'baseUrl' in update || 'siteType' in update) {
+      setUsageResults((current) => { const next = { ...current }; delete next[id]; return next; });
+    }
+    setDirty(true);
+  }
   function reorderSite(id, target) {
     if (operation.current) return;
     const from = sites.findIndex((site) => site.id === id);
@@ -180,7 +187,7 @@ function Workspace({ onLogout }) {
         await save();
         const { data } = await send('usage/token', 'POST', { siteId: site.id });
         setUsageResults((current) => ({ ...current, [site.id]: { ok: true, data } }));
-        notify('消耗查询完成');
+        notify(data.failedCount ? `消耗查询完成：${data.successCount} 个成功，${data.failedCount} 个失败` : '消耗查询完成', data.failedCount > 0);
       } catch (error) {
         setUsageResults((current) => ({ ...current, [site.id]: { ok: false, message: error.message } }));
         throw error;

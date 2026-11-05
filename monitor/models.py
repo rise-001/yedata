@@ -33,6 +33,7 @@ class Site(models.Model):
     password = models.TextField(blank=True)
     token = models.TextField(blank=True)
     usage_token = models.TextField(blank=True)
+    usage_keys = models.JSONField(default=list, blank=True)
     session_cookie = models.TextField(blank=True)
     auth_mode = models.CharField(max_length=32, blank=True, default='password')
     new_api_user_id = models.CharField(max_length=64, blank=True)
@@ -63,6 +64,7 @@ class Site(models.Model):
         'balanceMultiplier': 'balance_multiplier', 'notifyEnabled': 'notify_enabled',
         'authMode': 'auth_mode', 'sessionCookie': 'session_cookie',
         'usageToken': 'usage_token',
+        'usageKeys': 'usage_keys',
     }
     _FIELD_MAP_INV = {v: k for k, v in _FIELD_MAP.items()}
 

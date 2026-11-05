@@ -13,7 +13,7 @@ const site = {
   currency: 'CNY',
 };
 
-async function mockApi(page, { authenticated = true, results = {}, sites = [site] } = {}) {
+async function mockApi(page, { authenticated = true, results = {}, sites = [site], usageResult } = {}) {
   const state = {
     authenticated,
     sites,
@@ -34,16 +34,19 @@ async function mockApi(page, { authenticated = true, results = {}, sites = [site
         response = { ok: true };
       } else response = { ok: false, message: '管理员账号或密码错误' };
     } else if (path === 'sites' && request.method() === 'PUT') {
-      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, ...item }) => ({
+      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, usageKeys, ...item }) => ({
         ...item,
         hasPassword: Boolean(password || item.hasPassword),
         hasToken: Boolean(token || item.hasToken),
         hasSessionCookie: Boolean(sessionCookie || item.hasSessionCookie),
-        hasUsageToken: Boolean(usageToken || item.hasUsageToken),
+        hasUsageToken: usageKeys?.some((key) => key.token || key.hasToken) || Boolean(usageToken),
+        usageKeys: usageKeys?.map(({ token, ...key }) => ({ ...key, hasToken: Boolean(token || key.hasToken) })),
       }));
       response = { ok: true, data: { sites: state.sites, settings: state.settings } };
     } else if (path === 'sites') {
       response = { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } };
+    } else if (path === 'usage/token') {
+      response = { ok: true, data: usageResult };
     } else if (path === 'check-many') {
       response = {
         ok: true,
@@ -60,6 +63,30 @@ async function mockApi(page, { authenticated = true, results = {}, sites = [site
   });
   return state;
 }
+
+test('移动端 Sub2 多 Key 查询显示今日使用金额和部分失败', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await mockApi(page, { sites: [{ ...site, usageKeys: [
+    { id: 'production', name: '生产', hasToken: true },
+    { id: 'testing', name: '测试', hasToken: true },
+  ] }], usageResult: {
+    keys: [
+      { keyId: 'production', keyName: '生产', ok: true, data: { todayActualCost: 1.25 } },
+      { keyId: 'testing', keyName: '测试', ok: false, message: '用量接口请求超时' },
+    ], successCount: 1, failedCount: 1, todayActualCost: 1.25,
+  } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Alpha', exact: true }).click();
+  await expect(page.getByLabel('消耗查询 API Key', { exact: true })).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+  await page.getByRole('button', { name: '消耗查询', exact: true }).click();
+  const result = page.getByRole('region', { name: '令牌消耗查询结果' });
+  await expect(result).toContainText('1 个成功，1 个失败');
+  await expect(result).toContainText('今日使用金额小计（仅成功项）：1.25');
+  await expect(result).toContainText('用量接口请求超时');
+  expect(state.calls.findIndex((call) => call.path === 'sites' && call.method === 'PUT'))
+    .toBeLessThan(state.calls.findIndex((call) => call.path === 'usage/token'));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
 
 test('桌面端完成登录、编辑和余额检查', async ({ page }, testInfo) => {
   const errors = [];

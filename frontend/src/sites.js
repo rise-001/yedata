@@ -5,6 +5,13 @@ export const presets = {
 
 export const typeNames = { auto: '自动识别', sub2: 'Sub2', newapi: 'New API', custom: '自定义' };
 
+export function newUsageKey(number) {
+  return {
+    id: globalThis.crypto?.randomUUID?.() || `key-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name: `Key ${number}`, token: '', hasToken: false,
+  };
+}
+
 export function hydrateSite(site) {
   return {
     name: '', baseUrl: '', timezone: 'Asia/Shanghai', loginPath: '', mePath: '', usagePath: '',
@@ -14,6 +21,9 @@ export function hydrateSite(site) {
     ...site,
     balanceDivisor: site.balanceDivisor ?? '',
     balanceMultiplier: site.balanceMultiplier ?? 1,
+    usageKeys: (site.usageKeys ?? (site.hasUsageToken || site.usageToken
+      ? [{ id: 'default', name: '默认 Key', hasToken: site.hasUsageToken, token: site.usageToken }]
+      : [])).map((key) => ({ ...key, token: key.token || '' })),
   };
 }
 
@@ -33,6 +43,10 @@ export function serializeSite(site) {
   data.intervalSeconds = Math.min(86400, Math.max(30, Number(data.intervalSeconds) || 300));
   data.balanceDivisor = data.balanceDivisor === '' ? null : Number(data.balanceDivisor);
   data.balanceMultiplier = data.balanceMultiplier === '' ? 1 : Number(data.balanceMultiplier);
+  data.usageKeys = data.usageKeys.map((key) => ({
+    id: key.id, name: key.name.trim(), token: key.token.trim(), hasToken: Boolean(key.hasToken),
+  }));
+  delete data.usageToken;
   return data;
 }
 
@@ -48,6 +62,10 @@ export function validateSites(sites) {
       : site.authMode === 'cookie' ? site.sessionCookie || site.hasSessionCookie
         : site.email && (site.password || site.hasPassword);
     if (!validAuth) throw new Error(`请完整填写“${site.name}”的认证信息`);
+    if (site.usageKeys.length > 20) throw new Error(`“${site.name}”最多可添加 20 个消耗查询 API Key`);
+    if (site.usageKeys.some((key) => !key.token && !key.hasToken)) {
+      throw new Error(`请填写“${site.name}”的消耗查询 API Key，或删除空白项`);
+    }
     if (!Number.isFinite(site.threshold) || site.threshold < 0) throw new Error(`“${site.name}”的预警阈值必须大于或等于 0`);
     if ((site.balanceDivisor !== null && (!Number.isFinite(site.balanceDivisor) || site.balanceDivisor <= 0))
       || !Number.isFinite(site.balanceMultiplier) || site.balanceMultiplier <= 0) {

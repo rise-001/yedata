@@ -6,7 +6,9 @@ so all callers in balance.py, scheduler.py, and views.py work unchanged.
 """
 import logging
 
-from monitor.adapters import is_newapi_site, looks_like_usage_token, normalize_site
+from django.db import transaction
+
+from monitor.adapters import get_usage_keys, is_newapi_site, looks_like_usage_token, normalize_site
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,7 @@ def load_sites() -> tuple[list[dict], str]:
     return sites, webhook
 
 
+@transaction.atomic
 def save_sites(sites: list[dict], settings_data: dict | None = None,
                current_webhook: str = '') -> tuple[list[dict], str]:
     """Persist sites list; return (saved_sites, webhook)."""
@@ -59,11 +62,16 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
         if is_newapi_site(norm) and looks_like_usage_token(misplaced_usage_token):
             norm['usageToken'] = norm.get('usageToken') or misplaced_usage_token
             norm['usagePath'] = ''
+            if not norm.get('usageKeys'):
+                norm.pop('usageKeys', None)
+
+        obj.usage_keys = get_usage_keys(norm, require_tokens=True)
+        obj.usage_token = ''
 
         # Only overwrite secrets when a non-empty value is provided.
         for js_key, py_attr in (
             ('password', 'password'), ('token', 'token'),
-            ('sessionCookie', 'session_cookie'), ('usageToken', 'usage_token'),
+            ('sessionCookie', 'session_cookie'),
         ):
             val = norm.get(js_key)
             if val:

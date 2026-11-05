@@ -4,6 +4,7 @@ Mirrors getBalance, checkAndNotify, sendWecom, runDailyReport from server.js.
 """
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from math import isfinite
 from datetime import datetime
 from datetime import timezone as dt_timezone
@@ -13,7 +14,8 @@ from django.conf import settings
 
 from monitor import state
 from monitor.adapters import (
-    infer_adapter, is_newapi_site, sanitize_cookie, site_config, upstream_fingerprint, url_for,
+    get_usage_keys, infer_adapter, is_newapi_site, is_sub2_site, sanitize_cookie, site_config,
+    upstream_fingerprint, url_for,
 )
 from monitor.storage import save_upstream_sessions, save_daily_usage
 from monitor.time_utils import day_key_of, shift_day_key, local_parts
@@ -26,12 +28,13 @@ REQUEST_TIMEOUT = 15  # seconds
 # ── HTTP helpers ────────────────────────────────────────────────────────────
 
 def fetch_json(url: str, *, method: str = 'GET', headers: dict | None = None,
-               json_body: dict | None = None, return_meta: bool = False):
+               json_body: dict | None = None, return_meta: bool = False,
+               timeout: float = REQUEST_TIMEOUT):
     resp = requests.request(
         method, url,
         headers={'Accept': 'application/json', **(headers or {})},
         json=json_body,
-        timeout=REQUEST_TIMEOUT,
+        timeout=timeout,
     )
     try:
         data = resp.json() if resp.text else {}
@@ -64,16 +67,67 @@ def fetch_json(url: str, *, method: str = 'GET', headers: dict | None = None,
 
 
 def get_token_usage(site: dict):
-    """Fetch New API token usage using the token saved for a site."""
+    """Query each saved key independently; keep the legacy single-key response."""
     cfg = site_config(site)
-    if not is_newapi_site(cfg):
-        raise ValueError('消耗查询仅支持 New API 站点')
-    token = str(cfg.get('usageToken') or '').strip()
-    if not token:
+    if not (is_sub2_site(cfg) or is_newapi_site(cfg)):
+        raise ValueError('消耗查询仅支持 Sub2 和 New API 站点')
+    keys = get_usage_keys(cfg, require_tokens=True)
+    if not keys:
         raise ValueError('请先在站点设置中填写消耗查询 API Key 并保存')
 
-    if token.lower().startswith('bearer '):
-        token = token[7:].strip()
+    def query(key):
+        try:
+            return {'keyId': key['id'], 'keyName': key['name'], 'ok': True,
+                    'data': _get_token_usage(cfg, key['token'])}
+        except Exception as exc:
+            if isinstance(exc, requests.Timeout):
+                message = '用量接口请求超时，请稍后重试'
+            elif isinstance(exc, requests.RequestException):
+                message = '无法连接用量接口，请稍后重试'
+            else:
+                message = str(exc)
+                for saved_key in keys:
+                    message = message.replace(saved_key['token'], '[已隐藏]')
+            return {'keyId': key['id'], 'keyName': key['name'], 'ok': False, 'message': message}
+
+    # Older API clients still receive the original flat single-key data shape.
+    if 'usageKeys' not in cfg:
+        result = query(keys[0])
+        if not result['ok']:
+            raise ValueError(result['message'])
+        return result['data']
+
+    with ThreadPoolExecutor(max_workers=min(5, len(keys))) as pool:
+        results = list(pool.map(query, keys))
+    successful = [item['data'] for item in results if item['ok']]
+    return {
+        'keys': results,
+        'successCount': len(successful),
+        'failedCount': len(results) - len(successful),
+        'todayActualCost': (sum(item['todayActualCost'] for item in successful)
+                            if is_sub2_site(cfg) and successful else None),
+    }
+
+
+def _get_token_usage(cfg: dict, token: str) -> dict:
+    if is_sub2_site(cfg):
+        raw = fetch_json(
+            url_for(cfg.get('baseUrl', ''), '/v1/usage'),
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=20,
+        )
+        inner = raw.get('data') if isinstance(raw, dict) else None
+        data = inner if isinstance(inner, dict) else raw
+        today = data.get('today') if isinstance(data, dict) else None
+        value = today.get('actual_cost') if isinstance(today, dict) else None
+        try:
+            cost = float(value) if not isinstance(value, bool) else float('nan')
+        except (TypeError, ValueError):
+            cost = float('nan')
+        if not isfinite(cost):
+            raise ValueError('用量接口未返回有效的 today.actual_cost')
+        return {'todayActualCost': cost}
+
     raw = fetch_json(
         url_for(cfg.get('baseUrl', ''), '/api/usage/token/'),
         headers={'Authorization': f'Bearer {token}'},
@@ -86,7 +140,9 @@ def get_token_usage(site: dict):
             value = data.get(key)
             if value is not None and value != '':
                 try:
-                    return float(value)
+                    parsed = float(value)
+                    if isfinite(parsed):
+                        return parsed
                 except (TypeError, ValueError):
                     pass
         return None

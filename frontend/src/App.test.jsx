@@ -14,7 +14,12 @@ function mockApi(config = {}) {
     if (path === 'login') return response(body.password === 'correct' ? { ok: true } : { ok: false, message: '管理员账号或密码错误' });
     if (state.expired) return response({ ok: false }, 401);
     if (path === 'sites' && options.method === 'PUT') {
-      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, ...site }) => ({ ...site, hasPassword: Boolean(password || site.hasPassword), hasToken: Boolean(token || site.hasToken), hasSessionCookie: Boolean(sessionCookie || site.hasSessionCookie), hasUsageToken: Boolean(usageToken || site.hasUsageToken) }));
+      state.sites = body.sites.map(({ password, token, sessionCookie, usageToken, usageKeys, ...site }) => ({
+        ...site, hasPassword: Boolean(password || site.hasPassword), hasToken: Boolean(token || site.hasToken),
+        hasSessionCookie: Boolean(sessionCookie || site.hasSessionCookie),
+        hasUsageToken: usageKeys?.some((key) => key.token || key.hasToken) || Boolean(usageToken),
+        usageKeys: usageKeys?.map(({ token, ...key }) => ({ ...key, hasToken: Boolean(token || key.hasToken) })),
+      }));
       return response({ ok: true, data: { sites: state.sites, settings: state.settings } });
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
@@ -169,6 +174,52 @@ describe('React 页面流程', () => {
     await user.click(screen.getByRole('button', { name: /高级设置/ }));
     expect(screen.getByLabelText('消耗查询 API Key')).toBeInTheDocument();
     expect(screen.queryByLabelText('用量接口')).not.toBeInTheDocument();
+  });
+
+  it('Sub2 添加多个 Key 后先保存再查询，显示今日金额与失败项小计', async () => {
+    const { fetch } = mockApi({ usageResult: {
+      keys: [
+        { keyId: 'one', keyName: '生产', ok: true, data: { todayActualCost: 0 } },
+        { keyId: 'two', keyName: '测试', ok: true, data: { todayActualCost: 1.234567 } },
+        { keyId: 'three', keyName: '开发', ok: false, message: '用量接口请求超时' },
+      ], successCount: 2, failedCount: 1, todayActualCost: 1.234567,
+    } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    expect(screen.getByRole('button', { name: '消耗查询' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '添加 API Key' }));
+    await user.clear(screen.getByLabelText('Key 名称 1'));
+    await user.type(screen.getByLabelText('Key 名称 1'), '生产');
+    await user.type(screen.getByLabelText('消耗查询 API Key'), 'sk-first');
+    await user.click(screen.getByRole('button', { name: '添加 API Key' }));
+    await user.type(screen.getByLabelText('消耗查询 API Key 2'), 'sk-second');
+    await user.click(screen.getByRole('button', { name: '添加 API Key' }));
+    await user.type(screen.getByLabelText('消耗查询 API Key 3'), 'sk-third');
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    expect(await screen.findByText('2 个成功，1 个失败')).toBeInTheDocument();
+    expect(screen.getByText('用量接口请求超时')).toBeInTheDocument();
+    expect(screen.getByText(/今日使用金额小计（仅成功项）/)).toBeInTheDocument();
+    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getAllByText('1.234567')).toHaveLength(2);
+    expect(screen.getByLabelText('消耗查询 API Key')).toHaveValue('');
+    expect(screen.getByLabelText('消耗查询 API Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+    const saveIndex = fetch.mock.calls.findIndex(([, options]) => options.method === 'PUT');
+    expect(saveIndex).toBeLessThan(fetch.mock.calls.findIndex(([url]) => url === '/api/usage/token'));
+    expect(JSON.parse(fetch.mock.calls[saveIndex][1].body).sites[0].usageKeys.map((key) => key.token)).toEqual(['sk-first', 'sk-second', 'sk-third']);
+  });
+
+  it('可删除全部已保存的 Key，不会重新恢复旧值', async () => {
+    const { state } = mockApi({ sites: [{ ...initialSite, usageKeys: [
+      { id: 'saved', name: '旧 Key', hasToken: true },
+    ] }] });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '删除 API Key 1' }));
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await screen.findByText('配置已保存，后台监控已生效');
+    expect(state.sites[0].usageKeys).toEqual([]);
+    expect(screen.queryByLabelText('消耗查询 API Key')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '消耗查询' })).toBeDisabled();
   });
 
   it('停用站点时保存配置并禁止手动检查', async () => {

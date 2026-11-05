@@ -154,17 +154,19 @@ def api_sites(request: HttpRequest) -> HttpResponse:
         try:
             body = _read_body(request)
             validate_site_list(body.get('sites', []), settings.MAX_SITES)
+            # Merge saved secrets before persisting.
+            merged = [normalize_site(with_saved_secrets(s, state.saved_sites))
+                      for s in body.get('sites', [])]
         except (ValueError, KeyError) as exc:
             return _err(str(exc))
-
-        # Merge saved secrets before persisting.
-        merged = [normalize_site(with_saved_secrets(s, state.saved_sites))
-                  for s in body.get('sites', [])]
         for s in merged:
             s.pop('webhook', None)
             s.pop('hasWebhook', None)
 
-        saved, webhook = save_sites(merged, body.get('settings'), state.global_webhook)
+        try:
+            saved, webhook = save_sites(merged, body.get('settings'), state.global_webhook)
+        except ValueError as exc:
+            return _err(str(exc))
         state.saved_sites = saved
         state.global_webhook = webhook
 

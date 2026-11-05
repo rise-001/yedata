@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, GripVertical, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
-import { formatBalance, formatInterval, formatTime, presets, siteStatus, typeNames } from './sites.js';
+import { formatBalance, formatInterval, formatTime, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
   return <div className="brand"><span className="brand-mark">Y</span><span>余额哨兵<small>BALANCE WATCH</small></span></div>;
@@ -16,6 +16,35 @@ export function Field({ label, value, onChange, children, wide, ...props }) {
     || <input value={value ?? ''} onChange={(event) => onChange(event.target.value)} {...props} />}</label>;
 }
 
+function TokenUsageResults({ result, isSub2 }) {
+  const usage = result.data;
+  const keys = usage?.keys || [{ keyId: 'default', keyName: usage?.name || '令牌消耗', ok: true, data: usage }];
+  const amount = (value) => value == null || !Number.isFinite(Number(value)) ? '—'
+    : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: isSub2 ? 6 : 2 });
+  const expires = (value) => value === -1 ? '永不过期'
+    : value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '未提供';
+  return <section className={`token-usage ${result.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
+    <div><strong>令牌消耗</strong><small>{result.ok
+      ? usage?.keys ? `${usage.successCount} 个成功，${usage.failedCount} 个失败` : '刚刚查询'
+      : result.message}</small></div>
+    {result.ok && <>
+      {isSub2 && usage?.keys && <p className="usage-total">{usage.failedCount ? '今日使用金额小计（仅成功项）' : '今日使用金额合计'}：<strong>{amount(usage.todayActualCost)}</strong></p>}
+      {keys.map((key) => <article className="usage-key-result" key={key.keyId} aria-label={`${key.keyName} 查询结果`}>
+        <strong>{key.keyName}{key.data?.name && key.data.name !== key.keyName ? ` · ${key.data.name}` : ''}</strong>
+        {!key.ok ? <p className="error-text">{key.message}</p> : isSub2
+          ? <dl className="token-usage-grid"><div><dt>今日使用金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div></dl>
+          : <dl className="token-usage-grid">
+            <div><dt>已用额度</dt><dd>{amount(key.data.usedQuota)}</dd></div>
+            <div><dt>剩余额度</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.remainingQuota)}</dd></div>
+            <div><dt>总额度</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.totalQuota)}</dd></div>
+            <div><dt>到期时间</dt><dd>{expires(key.data.expiresAt)}</dd></div>
+            <div className="wide"><dt>模型限制</dt><dd>{key.data.modelLimitsEnabled ? (key.data.modelLimits?.length ? key.data.modelLimits.join('、') : '已启用') : '未限制'}</dd></div>
+          </dl>}
+      </article>)}
+    </>}
+  </section>;
+}
+
 export function SiteCard({ site, result, usageResult, usageBusy, index, busy, checking, selected, dragging, dragOver, onChange, onCheck, onUsage, onToggle, onDelete, onOpen, onDragStart, onDragOver, onDrop, onDragEnd, onMove }) {
   const [expanded, setExpanded] = useState(Boolean(site._new || selected));
   const [advanced, setAdvanced] = useState(Boolean(site._new));
@@ -26,11 +55,12 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
     || (site.siteType === 'auto' && (site.mePath === '/api/user/self' || site.balanceField === 'quota')));
   const isNewApi = site.siteType === 'newapi' || (site.siteType === 'auto'
     && (site.mePath === '/api/user/self' || site.balanceField === 'quota'));
+  const isSub2 = site.siteType === 'sub2' || (site.siteType === 'auto' && site.mePath === '/api/v1/auth/me');
+  const supportsUsage = isNewApi || isSub2;
   const secretPlaceholder = (key) => site[`has${key[0].toUpperCase()}${key.slice(1)}`]
     ? '已安全保存，留空保持不变' : '输入凭据';
-  const usage = usageResult?.data;
-  const quota = (value) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
-  const expires = usage?.expiresAt === -1 ? '永不过期' : usage?.expiresAt ? new Date(usage.expiresAt * 1000).toLocaleString('zh-CN', { hour12: false }) : '未提供';
+  const usageKeys = site.usageKeys;
+  const updateUsageKey = (id, patch) => update('usageKeys')(usageKeys.map((key) => key.id === id ? { ...key, ...patch } : key));
   function handleDragKeyDown(event) {
     const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
     if (!direction) return;
@@ -46,7 +76,7 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
         <button className="text-button" aria-expanded={expanded} aria-controls={`fields-${site.id}`} onClick={() => setExpanded(!expanded)}>{expanded ? '收起' : '展开'}</button>
         <button className="text-button" disabled={busy} onClick={() => onOpen(site)}>进入 <ExternalLink size={12} aria-hidden="true" /></button>
         <button className="text-button" disabled={busy || !site.enabled} onClick={() => onCheck(site.id)}><RefreshCw size={12} aria-hidden="true" />检查</button>
-        {isNewApi && <button className="text-button" disabled={busy || (!site.usageToken && !site.hasUsageToken)} onClick={() => onUsage(site)}><Activity size={12} aria-hidden="true" />{usageBusy ? '查询中…' : '消耗查询'}</button>}
+        {supportsUsage && <button className="text-button" disabled={busy || !usageKeys.some((key) => key.token || key.hasToken)} onClick={() => { setExpanded(true); onUsage(site); }}><Activity size={12} aria-hidden="true" />{usageBusy ? '查询中…' : '消耗查询'}</button>}
         <button className="text-button" disabled={busy} onClick={() => onToggle(site)}><Power size={12} aria-hidden="true" />{site.enabled ? '停用' : '启用'}</button>
         <button className="text-button danger" disabled={busy} onClick={() => onDelete(site)}><Trash2 size={12} aria-hidden="true" />删除</button>
       </div>
@@ -55,16 +85,7 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
       <div className="site-result"><div><small>可用余额</small><strong>{result?.ok ? formatBalance(result.balance) : '—'} <em>{result?.currency || site.currency}</em></strong><small>{result?.displayName || result?.email || '等待连接'}</small></div>
         <div><small>最近状态</small><p>{!site.enabled ? '监控已停止' : result?.ok ? result.notified ? '已发送预警' : siteStatus(site, result).text : result?.message || '等待检查'}</p>
           <small className={result?.notificationError ? 'error-text' : ''}>{result?.notificationError ? `通知失败：${result.notificationError}` : result?.notificationMessage || formatTime(result?.checkedAt)}</small></div></div>
-      {isNewApi && usageResult && <section className={`token-usage ${usageResult.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
-        <div><strong>{usage?.name || '令牌消耗'}</strong><small>{usageResult.ok ? '刚刚查询' : usageResult.message}</small></div>
-        {usageResult.ok && <dl className="token-usage-grid">
-          <div><dt>已用额度</dt><dd>{quota(usage.usedQuota)}</dd></div>
-          <div><dt>剩余额度</dt><dd>{usage.unlimitedQuota ? '不限额' : quota(usage.remainingQuota)}</dd></div>
-          <div><dt>总额度</dt><dd>{usage.unlimitedQuota ? '不限额' : quota(usage.totalQuota)}</dd></div>
-          <div><dt>到期时间</dt><dd>{expires}</dd></div>
-          <div className="wide"><dt>模型限制</dt><dd>{usage.modelLimitsEnabled ? (usage.modelLimits?.length ? usage.modelLimits.join('、') : '已启用') : '未限制'}</dd></div>
-        </dl>}
-      </section>}
+      {supportsUsage && usageResult && <TokenUsageResults result={usageResult} isSub2={isSub2} />}
       <fieldset disabled={busy}>
         <div className="fields-grid">
           {field('name', '站点名称', { maxLength: 80 })}
@@ -76,7 +97,15 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
           {site.authMode === 'password' && <>{field('email', '账号 / 邮箱', { autoComplete: 'off' })}{field('password', '密码', { type: 'password', autoComplete: 'new-password', placeholder: secretPlaceholder('password') })}</>}
           {site.authMode === 'token' && field('token', '访问令牌 / Bearer Token', { type: 'password', autoComplete: 'off', placeholder: secretPlaceholder('token'), wide: true })}
           {site.authMode === 'cookie' && <Field label="登录 Cookie" wide><textarea rows={3} value={site.sessionCookie} autoComplete="off" spellCheck={false} onChange={(event) => update('sessionCookie')(event.target.value)} placeholder={secretPlaceholder('sessionCookie')} /></Field>}
-          {isNewApi && field('usageToken', '消耗查询 API Key', { type: 'password', autoComplete: 'off', placeholder: site.hasUsageToken ? '已安全保存，留空保持不变' : 'sk-...', wide: true })}
+          {supportsUsage && <section className="usage-keys-editor" aria-label="消耗查询 API Keys">
+            <div className="usage-keys-heading"><strong>消耗查询 API Keys</strong><button className="text-button" type="button" disabled={usageKeys.length >= 20} onClick={() => update('usageKeys')([...usageKeys, newUsageKey(usageKeys.length + 1)])}><Plus size={13} aria-hidden="true" />添加 API Key</button></div>
+            <p>{isSub2 ? '逐个查询今日使用金额。' : '逐个查询令牌额度。'}可添加多个 Key，留空保留已保存的值，删除后保存生效。</p>
+            {usageKeys.map((key, keyIndex) => <div className="usage-key-fields" key={key.id}>
+              <Field label={`Key 名称 ${keyIndex + 1}`} value={key.name} maxLength={80} onChange={(name) => updateUsageKey(key.id, { name })} />
+              <Field label={keyIndex === 0 ? '消耗查询 API Key' : `消耗查询 API Key ${keyIndex + 1}`} value={key.token} type="password" autoComplete="off" placeholder={key.hasToken ? '已安全保存，留空保持不变' : 'sk-...'} onChange={(token) => updateUsageKey(key.id, { token })} />
+              <button className="text-button danger" type="button" aria-label={`删除 API Key ${keyIndex + 1}`} onClick={() => update('usageKeys')(usageKeys.filter((item) => item.id !== key.id))}><Trash2 size={13} aria-hidden="true" />删除</button>
+            </div>)}
+          </section>}
           {field('threshold', '预警阈值', { type: 'number', min: 0, step: '0.01' })}
           {field('intervalSeconds', '查询间隔（秒）', { type: 'number', min: 30, max: 86400, step: 1 })}
           {field('balanceMultiplier', '余额倍率', { type: 'number', min: '0.000001', step: 'any' })}

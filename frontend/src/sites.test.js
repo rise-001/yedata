@@ -35,4 +35,13 @@ describe('站点配置与余额状态', () => {
   it('切换为 New API 时清除 Sub2 用量接口', () => {
     expect({ ...presets.sub2, ...presets.newapi }).toMatchObject({ usagePath: '', balanceDivisor: 500000, currency: 'CNY' });
   });
+  it('兼容旧的单 Key 标记，保存多个 Key 时拒绝空白项', () => {
+    const legacy = hydrateSite({ ...site, usageKeys: undefined, hasUsageToken: true });
+    expect(legacy.usageKeys).toEqual([{ id: 'default', name: '默认 Key', hasToken: true, token: '' }]);
+    expect(() => validateSites([serializeSite(legacy)])).not.toThrow();
+    expect(serializeSite(legacy)).not.toHaveProperty('usageToken');
+    const empty = hydrateSite({ ...site, usageKeys: [{ id: 'new', name: 'New', token: '' }] });
+    expect(() => validateSites([serializeSite(empty)])).toThrow('消耗查询 API Key');
+    expect(hydrateSite({ ...legacy, usageKeys: [] }).usageKeys).toEqual([]);
+  });
 });

@@ -122,7 +122,17 @@ td small { font-size: 9px; }
 .token-usage-grid dt { font-size: 10px; color: var(--muted); }
 .token-usage-grid dd { margin: 6px 0 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
 .token-usage-grid .wide { grid-column: 1 / -1; }
+.usage-key-result { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.usage-key-result > strong { font-size: 12px; }
+.usage-key-result p, .usage-total { font-size: 12px; }
+.usage-keys-editor { grid-column: 1 / -1; padding: 14px; border: 1px solid var(--line); border-radius: 5px; min-width: 0; }
+.usage-keys-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.usage-keys-heading strong { font-size: 12px; }
+.usage-keys-editor > p { font-size: 11px; color: var(--muted); line-height: 1.7; }
+.usage-key-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 12px; align-items: end; margin-top: 12px; }
+.usage-key-fields > button { min-height: 39px; }
 @media (max-width: 760px) { .token-usage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .usage-key-fields { grid-template-columns: minmax(0, 1fr) auto; } .usage-key-fields > .field:first-child { grid-column: 1 / -1; } }
 .fields-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px 15px; }
 .wide { grid-column: span 2; }
 .site-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 17px; margin-top: 20px; }
