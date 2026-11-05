@@ -878,7 +878,7 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
         ts = datetime.now(dt_timezone.utc).isoformat()
 
     content = '\n'.join([
-        f'**余额日报 · {ts}**',
+        f'**数据中心晨报 · {ts}**',
         *lines,
         f'> 共 {len(enabled_sites)} 个站点{"，" + str(failed) + " 个查询失败" if failed else ""}',
         f'> **总余额**：{sum_text(balance_totals) or "--"}',

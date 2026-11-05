@@ -3,7 +3,7 @@ import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLi
 import { formatBalance, formatInterval, formatTime, getTodayUsage, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
 
 export function Brand() {
-  return <div className="brand"><span className="brand-mark">Y</span><span>余额哨兵<small>BALANCE WATCH</small></span></div>;
+  return <div className="brand"><span className="brand-mark">D</span><span>数据中心<small>DATA CENTER</small></span></div>;
 }
 
 export function Status({ site, result, checking = false }) {

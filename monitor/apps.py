@@ -3,7 +3,7 @@ from django.apps import AppConfig
 
 class MonitorConfig(AppConfig):
     name = 'monitor'
-    verbose_name = '余额哨兵'
+    verbose_name = '数据中心'
 
     def ready(self):
         import sys

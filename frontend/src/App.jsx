@@ -17,7 +17,7 @@ function Login({ onLogin, expired }) {
     catch (error) { setError(error.message); }
     finally { setBusy(false); }
   }
-  return <main className="login-layout"><section className="login-intro"><Brand /><div className="login-copy"><span className="eyebrow">KEEP YOUR BALANCE IN SIGHT</span><h1>每一份余额，<br />心中有数。</h1><p>一个面板，关注所有站点。<br />让自动监控和及时预警，照看每一次用量。</p><div className="login-decoration" aria-hidden="true"><span>余额监控</span><strong>持续在线 <i /></strong><div /><div /><div /></div></div><small>多站点余额监控 · 企业微信预警</small></section>
+  return <main className="login-layout"><section className="login-intro"><Brand /><div className="login-copy"><span className="eyebrow">ALL YOUR DATA IN ONE PLACE</span><h1>站点数据，<br />一目了然。</h1><p>一个面板，汇聚所有站点。<br />统一掌握账户余额、Key 消耗与监控状态。</p><div className="login-decoration" aria-hidden="true"><span>站点数据监控</span><strong>持续在线 <i /></strong><div /><div /><div /></div></div><small>多站点数据汇总 · 消耗统计 · 企业微信通知</small></section>
     <section className="login-form-area"><form className="login-card" onSubmit={submit}><span className="eyebrow">欢迎回来</span><h2>登录管理后台</h2><p>使用管理员账号和密码进入工作区。</p><fieldset disabled={busy}>
       <Field label="管理员账号" value={username} onChange={setUsername} autoComplete="username" autoFocus required />
       <Field label="管理员密码" value={password} onChange={setPassword} type="password" autoComplete="current-password" required />
@@ -223,10 +223,10 @@ function Workspace({ onLogout }) {
   const latest = Object.values(results).filter((item) => item?.checkedAt).sort((a, b) => Date.parse(b.checkedAt) - Date.parse(a.checkedAt))[0]?.checkedAt;
 
   return <div className={`app-shell ${view === 'dashboard' ? 'dashboard-shell' : ''}`}><aside className="sidebar"><Brand /><span className="side-label">工作区</span><nav aria-label="主导航">
-    <a href="/#dashboard" className={view === 'dashboard' ? 'nav-item active' : 'nav-item'} aria-current={view === 'dashboard' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('dashboard'); }}><LayoutDashboard size={17} aria-hidden="true" />余额概览</a>
+    <a href="/#dashboard" className={view === 'dashboard' ? 'nav-item active' : 'nav-item'} aria-current={view === 'dashboard' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('dashboard'); }}><LayoutDashboard size={17} aria-hidden="true" />数据概览</a>
     <a href="/#sites" className={view === 'sites' ? 'nav-item active' : 'nav-item'} aria-current={view === 'sites' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('sites'); }}><Settings size={17} aria-hidden="true" />站点设置</a>
     </nav><div className="sidebar-footer"><i className="online-dot" /><div>后台持续监控<small>凭据仅保存在服务端</small></div></div></aside>
-    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{view === 'dashboard' ? 'BALANCE OVERVIEW' : 'MULTI-SITE BALANCE MONITOR'}</span><h1>{view === 'dashboard' ? '余额概览' : '站点设置'}</h1>{view === 'dashboard' && <p className="overview-intro">每一份余额，尽在掌握。</p>}</div><div className="top-actions"><small className="last-sync">{view === 'dashboard' && <span>最近检查</span>}{formatTime(latest)}</small><button className="text-button" disabled={Boolean(busy)} onClick={logout}><LogOut size={14} aria-hidden="true" />退出</button><button className="icon-button" title="刷新余额数据" aria-label="刷新余额数据" disabled={!loaded || Boolean(busy)} onClick={() => view === 'sites' ? check() : refresh()}><RefreshCw size={17} aria-hidden="true" /></button></div></header>
+    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{view === 'dashboard' ? 'DATA OVERVIEW' : 'MULTI-SITE DATA CENTER'}</span><h1>{view === 'dashboard' ? '数据概览' : '站点设置'}</h1>{view === 'dashboard' && <p className="overview-intro">余额、消耗与站点状态，尽在掌握。</p>}</div><div className="top-actions"><small className="last-sync">{view === 'dashboard' && <span>最近检查</span>}{formatTime(latest)}</small><button className="text-button" disabled={Boolean(busy)} onClick={logout}><LogOut size={14} aria-hidden="true" />退出</button><button className="icon-button" title="刷新站点数据" aria-label="刷新站点数据" disabled={!loaded || Boolean(busy)} onClick={() => view === 'sites' ? check() : refresh()}><RefreshCw size={17} aria-hidden="true" /></button></div></header>
       {syncError && <div className="notice error-notice" role="status">暂时无法同步检查结果，将自动重试。<button className="text-button" onClick={refresh}>立即重试</button></div>}
       {dirty && <div className="notice" role="status">配置有修改，请保存以应用到后台监控。<button className="text-button" disabled={Boolean(busy)} onClick={() => run('save', async () => { await save(); notify('配置已保存，后台监控已生效'); })}>保存配置</button></div>}
       {!loaded ? <div className="empty-state" role="status">{loadError ? <><p className="error-text">{loadError}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>重新加载</button></> : '正在加载站点配置…'}</div>
@@ -238,10 +238,10 @@ function Workspace({ onLogout }) {
           </div></section>
           <section className="notification-panel"><div><h3>企业微信通知</h3><p>所有站点共用此 Webhook，预警可按站点独立设置。</p></div><fieldset disabled={Boolean(busy)}><Field label="全局 Webhook" value={webhook} onChange={(value) => { setWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={testNotification}>{busy === 'notify' ? '发送中…' : '测试通知'}</button></section>
           {!sites.length && <div className="empty-state"><p>还没有监控站点，添加一个开始吧。</p><button className="primary-button" disabled={Boolean(busy)} onClick={add}><Plus size={15} aria-hidden="true" />添加站点</button></div>}
-          <p id="site-order-help" className="site-order-help">拖动站点左侧手柄调整显示顺序；聚焦手柄后也可用上下方向键移动。排序保存后同步到余额概览。</p>
+          <p id="site-order-help" className="site-order-help">拖动站点左侧手柄调整显示顺序；聚焦手柄后也可用上下方向键移动。排序保存后同步到数据概览。</p>
           {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} usageResult={usageResults[site.id]} usageBusy={busy === `usage-${site.id}`} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} dragging={draggedSite === site.id} dragOver={dragOverSite === site.id} onChange={change} onCheck={check} onUsage={queryTokenUsage} onToggle={toggle} onDelete={remove} onOpen={open} onDragStart={dragStart} onDragOver={dragOver} onDrop={drop} onDragEnd={dragEnd} onMove={moveSite} />)}
           </>}
-      <footer className="page-footer"><span>余额哨兵 · 多站点监控</span><span><i className="online-dot" />{syncError ? '等待恢复连接' : loaded ? '已连接服务端' : '正在连接'}</span></footer>
+      <footer className="page-footer"><span>数据中心 · 多站点数据管理</span><span><i className="online-dot" />{syncError ? '等待恢复连接' : loaded ? '已连接服务端' : '正在连接'}</span></footer>
     </main>{toast && <div className={`toast ${toast.error ? 'error-toast' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.message}<button aria-label="关闭提示" onClick={() => setToast(null)}><X size={17} aria-hidden="true" /></button></div>}</div>;
 }
 
@@ -253,7 +253,7 @@ export default function App() {
   function setSession(value) {
     setAuthenticated(value);
     history.replaceState(null, '', value ? `/${location.hash}` : '/login.html');
-    document.title = value ? '余额哨兵' : '登录 · 余额哨兵';
+    document.title = value ? '数据中心' : '登录 · 数据中心';
   }
   useEffect(() => {
     const controller = new AbortController();

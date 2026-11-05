@@ -111,7 +111,7 @@ describe('React 页面流程', () => {
     render(<App />); await openSiteSettings(user);
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     await screen.findByRole('region', { name: '令牌消耗查询结果' });
-    await user.click(screen.getByRole('link', { name: '余额概览' }));
+    await user.click(screen.getByRole('link', { name: '数据概览' }));
     const row = screen.getByRole('button', { name: 'Alpha', exact: true }).closest('tr');
     expect(row.querySelector('.overview-usage strong')).toHaveTextContent('2.75');
     expect(row.querySelector('.overview-balance strong')).toHaveTextContent('100.00');

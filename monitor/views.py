@@ -293,7 +293,7 @@ def api_notify_test(request: HttpRequest) -> HttpResponse:
         webhook = str(body.get('webhook') or state.global_webhook).strip()
         if not webhook:
             return _err('请填写企业微信机器人 Webhook')
-        send_wecom(webhook, '**余额监控测试**\n> 全局企业微信通知已连接')
+        send_wecom(webhook, '**数据中心 · 通知测试**\n> 全局企业微信通知已连接')
         # A successful test with a newly entered URL should also activate it
         # for scheduled alerts. The test button is commonly used as the only
         # save action for notification settings.
