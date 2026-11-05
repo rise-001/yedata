@@ -20,8 +20,8 @@ function TokenUsageResults({ result, isSub2 }) {
   const usage = result.data;
   const keys = usage?.keys || [{ keyId: 'default', keyName: usage?.name || '令牌消耗', ok: true, data: usage }];
   const amount = (value) => value == null || !Number.isFinite(Number(value)) ? '—'
-    : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: isSub2 ? 6 : 2 });
-  const expires = (value) => value === -1 ? '永不过期'
+    : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 6 });
+  const expires = (value) => value === -1 || value === 0 ? '永不过期'
     : value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '未提供';
   return <section className={`token-usage ${result.ok ? '' : 'error-text'}`} aria-label="令牌消耗查询结果">
     <div><strong>令牌消耗</strong><small>{result.ok
@@ -30,13 +30,13 @@ function TokenUsageResults({ result, isSub2 }) {
     {result.ok && <>
       {isSub2 && usage?.keys && <p className="usage-total">{usage.failedCount ? '今日使用金额小计（仅成功项）' : '今日使用金额合计'}：<strong>{amount(usage.todayActualCost)}</strong></p>}
       {keys.map((key) => <article className="usage-key-result" key={key.keyId} aria-label={`${key.keyName} 查询结果`}>
-        <strong>{key.keyName}{key.data?.name && key.data.name !== key.keyName ? ` · ${key.data.name}` : ''}</strong>
+        <strong>{key.data?.name || key.keyName}{key.data?.name && key.data.name !== key.keyName ? ` · ${key.keyName}` : ''}</strong>
         {!key.ok ? <p className="error-text">{key.message}</p> : isSub2
           ? <dl className="token-usage-grid"><div><dt>今日使用金额</dt><dd>{amount(key.data.todayActualCost)}</dd></div></dl>
           : <dl className="token-usage-grid">
-            <div><dt>已用额度</dt><dd>{amount(key.data.usedQuota)}</dd></div>
-            <div><dt>剩余额度</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.remainingQuota)}</dd></div>
-            <div><dt>总额度</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.totalQuota)}</dd></div>
+            <div><dt>累计消耗金额</dt><dd>{amount(key.data.usedQuota)}</dd></div>
+            <div><dt>剩余金额</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.remainingQuota)}</dd></div>
+            <div><dt>总金额</dt><dd>{key.data.unlimitedQuota ? '不限额' : amount(key.data.totalQuota)}</dd></div>
             <div><dt>到期时间</dt><dd>{expires(key.data.expiresAt)}</dd></div>
             <div className="wide"><dt>模型限制</dt><dd>{key.data.modelLimitsEnabled ? (key.data.modelLimits?.length ? key.data.modelLimits.join('、') : '已启用') : '未限制'}</dd></div>
           </dl>}
@@ -51,10 +51,9 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
   useEffect(() => { if (selected) setExpanded(true); }, [selected]);
   const update = (key) => (value) => onChange(site.id, { [key]: value });
   const field = (key, label, props = {}) => <Field label={label} value={site[key]} onChange={update(key)} {...props} />;
-  const showUserId = site.authMode !== 'cookie' && (site.siteType === 'newapi' || site.authMode === 'token'
-    || (site.siteType === 'auto' && (site.mePath === '/api/user/self' || site.balanceField === 'quota')));
   const isNewApi = site.siteType === 'newapi' || (site.siteType === 'auto'
     && (site.mePath === '/api/user/self' || site.balanceField === 'quota'));
+  const showUserId = isNewApi || site.authMode === 'token';
   const isSub2 = site.siteType === 'sub2' || (site.siteType === 'auto' && site.mePath === '/api/v1/auth/me');
   const supportsUsage = isNewApi || isSub2;
   const secretPlaceholder = (key) => site[`has${key[0].toUpperCase()}${key.slice(1)}`]
@@ -99,7 +98,7 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
           {site.authMode === 'cookie' && <Field label="登录 Cookie" wide><textarea rows={3} value={site.sessionCookie} autoComplete="off" spellCheck={false} onChange={(event) => update('sessionCookie')(event.target.value)} placeholder={secretPlaceholder('sessionCookie')} /></Field>}
           {supportsUsage && <section className="usage-keys-editor" aria-label="消耗查询 API Keys">
             <div className="usage-keys-heading"><strong>消耗查询 API Keys</strong><button className="text-button" type="button" disabled={usageKeys.length >= 20} onClick={() => update('usageKeys')([...usageKeys, newUsageKey(usageKeys.length + 1)])}><Plus size={13} aria-hidden="true" />添加 API Key</button></div>
-            <p>{isSub2 ? '逐个查询今日使用金额。' : '逐个查询令牌额度。'}可添加多个 Key，留空保留已保存的值，删除后保存生效。</p>
+            <p>{isSub2 ? '逐个查询今日使用金额。' : '逐个查询累计消耗金额。'}可添加多个 Key，留空保留已保存的值，删除后保存生效。</p>
             {usageKeys.map((key, keyIndex) => <div className="usage-key-fields" key={key.id}>
               <Field label={`Key 名称 ${keyIndex + 1}`} value={key.name} maxLength={80} onChange={(name) => updateUsageKey(key.id, { name })} />
               <Field label={keyIndex === 0 ? '消耗查询 API Key' : `消耗查询 API Key ${keyIndex + 1}`} value={key.token} type="password" autoComplete="off" placeholder={key.hasToken ? '已安全保存，留空保持不变' : 'sk-...'} onChange={(token) => updateUsageKey(key.id, { token })} />

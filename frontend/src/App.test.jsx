@@ -147,7 +147,7 @@ describe('React 页面流程', () => {
     expect(screen.queryByLabelText('用量接口')).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('认证方式'), 'cookie');
     expect(screen.getByLabelText('登录 Cookie')).toBeInTheDocument();
-    expect(screen.queryByLabelText('New-Api-User ID')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('New-Api-User ID')).toBeInTheDocument();
     expect(screen.queryByLabelText('访问令牌 / Bearer Token')).not.toBeInTheDocument();
   });
 
@@ -174,6 +174,26 @@ describe('React 页面流程', () => {
     await user.click(screen.getByRole('button', { name: /高级设置/ }));
     expect(screen.getByLabelText('消耗查询 API Key')).toBeInTheDocument();
     expect(screen.queryByLabelText('用量接口')).not.toBeInTheDocument();
+  });
+
+  it('New API 展示接口名称与换算后的消耗，不限额仍显示消耗金额', async () => {
+    mockApi({ sites: [{ ...initialSite, siteType: 'newapi', authMode: 'cookie', hasSessionCookie: true,
+      newApiUserId: '5', usageKeys: [{ id: 'gemini', name: 'Key 1', hasToken: true }] }],
+    usageResult: { keys: [{ keyId: 'gemini', keyName: 'Key 1', ok: true, data: {
+      name: 'gemini 文本', usedQuota: 136.460558, remainingQuota: -9.73614,
+      totalQuota: 126.724418, unlimitedQuota: true, expiresAt: 0,
+      modelLimitsEnabled: false, modelLimits: [],
+    } }], successCount: 1, failedCount: 0 } });
+    const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    expect(screen.getByLabelText('New-Api-User ID')).toHaveValue('5');
+    await user.click(screen.getByRole('button', { name: '消耗查询' }));
+    expect(await screen.findByText('gemini 文本 · Key 1')).toBeInTheDocument();
+    expect(screen.getByText('累计消耗金额')).toBeInTheDocument();
+    expect(screen.getByText('136.460558')).toBeInTheDocument();
+    expect(screen.getAllByText('不限额')).toHaveLength(2);
+    expect(screen.getByText('永不过期')).toBeInTheDocument();
+    expect(screen.getByText('未限制')).toBeInTheDocument();
   });
 
   it('Sub2 添加多个 Key 后先保存再查询，显示今日金额与失败项小计', async () => {

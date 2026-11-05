@@ -28,7 +28,7 @@ SITE = {
 class TokenUsageTests(unittest.TestCase):
     def test_usage_request_uses_saved_token_and_user_id(self):
         response = {'code': True, 'data': {
-            'name': 'production', 'used_quota': 12, 'remain_quota': 88,
+            'name': 'production', 'used_quota': 6000000, 'remain_quota': 44000000,
             'expired_time': -1, 'unlimited_quota': False,
             'model_limits_enabled': True, 'model_limits': ['gpt-4o'],
         }}
@@ -41,9 +41,57 @@ class TokenUsageTests(unittest.TestCase):
             'modelLimitsEnabled': True, 'modelLimits': ['gpt-4o'],
         })
         fetch.assert_called_once_with(
-            'https://newapi.example.com/api/usage/token/',
-            headers={'Authorization': 'Bearer sk-usage-key'},
+            'https://newapi.example.com/api/usage/token',
+            headers={'Authorization': 'Bearer sk-usage-key', 'New-Api-User': '7'},
         )
+
+    def test_newapi_total_used_is_converted_to_cost_and_name_is_preserved(self):
+        response = {'code': True, 'data': {
+            'expires_at': 0, 'model_limits': {}, 'model_limits_enabled': False,
+            'name': 'gemini 文本', 'object': 'token_usage',
+            'total_available': -4868070, 'total_granted': 63362209,
+            'total_used': 68230279, 'unlimited_quota': True,
+        }, 'message': 'ok'}
+        site = {**SITE, 'newApiUserId': '5', 'balanceDivisor': 10, 'balanceMultiplier': 20}
+        with patch.object(balance, 'fetch_json', return_value=response) as fetch:
+            result = balance.get_token_usage(site)
+        self.assertEqual(result, {
+            'name': 'gemini 文本', 'usedQuota': 136.460558,
+            'remainingQuota': -9.73614, 'totalQuota': 126.724418,
+            'unlimitedQuota': True, 'expiresAt': 0,
+            'modelLimitsEnabled': False, 'modelLimits': [],
+        })
+        self.assertEqual(fetch.call_args.kwargs['headers'], {
+            'Authorization': 'Bearer sk-usage-key', 'New-Api-User': '5',
+        })
+
+    def test_newapi_zero_and_string_quotas_are_converted_once(self):
+        response = {'data': {'total_used': '0', 'total_available': '500000',
+                             'total_granted': '500000', 'used_quota': 999999}}
+        with patch.object(balance, 'fetch_json', return_value=response):
+            result = balance.get_token_usage(SITE)
+        self.assertEqual(result['usedQuota'], 0)
+        self.assertEqual(result['remainingQuota'], 1)
+        self.assertEqual(result['totalQuota'], 1)
+
+    def test_newapi_model_limit_mapping_and_negative_remaining(self):
+        response = {'data': {'total_used': 1000000, 'total_granted': 500000,
+                             'model_limits_enabled': True,
+                             'model_limits': {'gemini': True, 'disabled-model': False}}}
+        with patch.object(balance, 'fetch_json', return_value=response):
+            result = balance.get_token_usage(SITE)
+        self.assertEqual(result['usedQuota'], 2)
+        self.assertEqual(result['remainingQuota'], -1)
+        self.assertEqual(result['modelLimits'], ['gemini'])
+
+    def test_newapi_user_id_is_optional_and_independent_of_cookie_balance_auth(self):
+        with patch.object(balance, 'fetch_json', return_value={}) as fetch:
+            balance.get_token_usage({**SITE, 'newApiUserId': ''})
+            self.assertEqual(fetch.call_args.kwargs['headers'], {'Authorization': 'Bearer sk-usage-key'})
+            balance.get_token_usage({**SITE, 'authMode': 'cookie', 'sessionCookie': 'session=balance'})
+            self.assertEqual(fetch.call_args.kwargs['headers'], {
+                'Authorization': 'Bearer sk-usage-key', 'New-Api-User': '7',
+            })
 
     def test_usage_requires_supported_site_and_token(self):
         with self.assertRaisesRegex(ValueError, 'New API'):
@@ -59,7 +107,9 @@ class TokenUsageTests(unittest.TestCase):
     def test_usage_accepts_key_with_bearer_prefix(self):
         with patch.object(balance, 'fetch_json', return_value={}) as fetch:
             balance.get_token_usage({**SITE, 'usageToken': 'Bearer sk-prefixed'})
-        self.assertEqual(fetch.call_args.kwargs['headers'], {'Authorization': 'Bearer sk-prefixed'})
+        self.assertEqual(fetch.call_args.kwargs['headers'], {
+            'Authorization': 'Bearer sk-prefixed', 'New-Api-User': '7',
+        })
 
     def test_fetch_json_accepts_boolean_true_code(self):
         response = Mock(ok=True, status_code=200, text='json')
@@ -155,12 +205,13 @@ class TokenUsageTests(unittest.TestCase):
             {'id': 'one', 'name': 'One', 'token': 'sk-one'},
             {'id': 'two', 'name': 'Two', 'token': 'sk-two'},
         ]}
-        with patch.object(balance, 'fetch_json', return_value={'data': {'used_quota': 12}}) as fetch:
+        with patch.object(balance, 'fetch_json', return_value={'data': {'total_used': 6000000}}) as fetch:
             result = balance.get_token_usage(site)
         self.assertEqual(result['successCount'], 2)
         self.assertTrue(all(key['data']['usedQuota'] == 12 for key in result['keys']))
         self.assertEqual({call.kwargs['headers']['Authorization'] for call in fetch.call_args_list},
                          {'Bearer sk-one', 'Bearer sk-two'})
+        self.assertTrue(all(call.kwargs['headers']['New-Api-User'] == '7' for call in fetch.call_args_list))
 
     def test_endpoint_returns_per_key_sub2_usage_without_saved_secrets(self):
         site = {**SITE, 'siteType': 'sub2', 'usageKeys': [

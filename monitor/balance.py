@@ -130,10 +130,11 @@ def _get_token_usage(cfg: dict, token: str) -> dict:
             raise ValueError('用量接口未返回有效的 usage.today.actual_cost')
         return {'todayActualCost': cost}
 
-    raw = fetch_json(
-        url_for(cfg.get('baseUrl', ''), '/api/usage/token/'),
-        headers={'Authorization': f'Bearer {token}'},
-    )
+    headers = {'Authorization': f'Bearer {token}'}
+    user_id = str(cfg.get('newApiUserId') or '').strip()
+    if user_id:
+        headers['New-Api-User'] = user_id
+    raw = fetch_json(url_for(cfg.get('baseUrl', ''), '/api/usage/token'), headers=headers)
     inner = raw.get('data') if isinstance(raw, dict) else None
     data = inner if isinstance(inner, dict) else raw if isinstance(raw, dict) else {}
 
@@ -149,16 +150,22 @@ def _get_token_usage(cfg: dict, token: str) -> dict:
                     pass
         return None
 
-    used = number('used_quota', 'usedQuota', 'used')
-    remaining = number('remain_quota', 'remaining_quota', 'remainQuota', 'remaining')
-    total = number('total_quota', 'quota', 'totalQuota', 'total')
+    # Both New API response formats report quota in units of 1 / 500000.
+    used = number('total_used', 'used_quota', 'usedQuota', 'used')
+    remaining = number('total_available', 'remain_quota', 'remaining_quota', 'remainQuota', 'remaining')
+    total = number('total_granted', 'total_quota', 'quota', 'totalQuota', 'total')
     unlimited = bool(data.get('unlimited_quota') or data.get('unlimitedQuota'))
     if total is None and used is not None and remaining is not None:
         total = used + remaining
     if remaining is None and total is not None and used is not None:
-        remaining = max(0, total - used)
+        remaining = total - used
 
-    expires = data.get('expired_time') or data.get('expiredTime') or data.get('expired_at') or data.get('expires_at')
+    used = used / 500000 if used is not None else None
+    remaining = remaining / 500000 if remaining is not None else None
+    total = total / 500000 if total is not None else None
+
+    expires = next((data[key] for key in ('expires_at', 'expired_time', 'expiredTime', 'expired_at')
+                    if data.get(key) not in (None, '')), None)
     try:
         expires = int(expires) if expires not in (None, '') else None
     except (TypeError, ValueError):
@@ -167,6 +174,8 @@ def _get_token_usage(cfg: dict, token: str) -> dict:
     model_limits = data.get('model_limits') or data.get('modelLimits') or []
     if isinstance(model_limits, str):
         model_limits = [item.strip() for item in model_limits.split(',') if item.strip()]
+    elif isinstance(model_limits, dict):
+        model_limits = [model for model, enabled in model_limits.items() if enabled]
     elif not isinstance(model_limits, list):
         model_limits = []
 
