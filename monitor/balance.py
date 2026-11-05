@@ -505,26 +505,52 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
     if not isinstance(balance, float) or balance != balance:  # NaN check
         raise ValueError('余额接口响应中没有有效的 balance 字段')
 
-    # Daily usage via usage endpoint (Sub2-style), only when caller requests it.
+    # Normal checks fetch today's account usage; reports may request another day.
+    queried_at = datetime.now(dt_timezone.utc).astimezone(ZoneInfo(timezone))
+    today = queried_at.strftime('%Y-%m-%d')
+    requested_day = usage_day or today
     usage_result = None
-    if usage_day and cfg.get('usagePath'):
+    today_usage_error = ''
+    if is_newapi_site(cfg) and not usage_day:
+        try:
+            start = queried_at.replace(hour=0, minute=0, second=0, microsecond=0)
+            params = urlencode({'start_timestamp': int(start.timestamp()),
+                                'end_timestamp': int(queried_at.timestamp())})
+            raw = fetch_json(
+                url_for(base_url, '/api/log/self/stat') + '?' + params,
+                headers=auth_headers(credentials),
+            )
+            data = raw.get('data') if isinstance(raw, dict) and raw.get('success') is True else None
+            value = data.get('quota') if isinstance(data, dict) else None
+            quota = float(value) if not isinstance(value, bool) else float('nan')
+            if not isfinite(quota):
+                raise ValueError('今日用量接口未返回有效的 data.quota')
+            usage_result = {'date': today, 'cost': quota / divisor * multiplier, 'currency': currency}
+        except Exception:
+            today_usage_error = '今日消耗查询失败，请检查站点用量接口或认证信息'
+    elif cfg.get('usagePath'):
         try:
             usage_url = url_for(base_url, cfg['usagePath'])
             sep = '&' if '?' in usage_url else '?'
             usage_url += (f'{sep}timezone={timezone}&granularity=day'
-                          f'&start_date={usage_day}&end_date={usage_day}')
+                          f'&start_date={requested_day}&end_date={requested_day}')
             usage_data = fetch_json(usage_url, headers=auth_headers(credentials, use_bearer))
             inner = usage_data.get('data') if isinstance(usage_data, dict) else usage_data
             if isinstance(inner, dict):
-                trend = inner.get('trend', [])
+                trend = inner.get('trend')
             else:
-                trend = []
+                trend = None
             if isinstance(trend, list):
                 total = sum(float(pt.get('actual_cost') or 0)
                             for pt in trend
-                            if str(pt.get('date', '')).startswith(usage_day))
-                usage_result = {'date': usage_day, 'cost': total, 'currency': currency}
+                            if str(pt.get('date', '')).startswith(requested_day))
+                if not isfinite(total):
+                    raise ValueError('用量接口未返回有效的消耗金额')
+                usage_result = {'date': requested_day, 'cost': total, 'currency': currency}
+            else:
+                raise ValueError('用量接口未返回有效的 trend 数据')
         except Exception as exc:
+            today_usage_error = '今日消耗查询失败，请检查站点用量接口或认证信息'
             logger.error('Usage request failed for %s: %s',
                          cfg.get('name') or base_url, exc)
 
@@ -539,6 +565,8 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         'balanceMultiplier': multiplier,
         'currency': currency,
         'usage': usage_result,
+        'todayUsage': usage_result if requested_day == today else None,
+        'todayUsageError': today_usage_error,
         'usedBalance': used_quota / divisor * multiplier,
         'frozenBalance': float(profile.get('frozen_balance') or 0) / divisor * multiplier,
         'email': profile.get('email') or cfg.get('email') or '',

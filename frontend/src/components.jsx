@@ -204,22 +204,25 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
             <div className="overview-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索站点" placeholder="搜索站点名称或网址" value={query} onChange={(event) => setQuery(event.target.value)} type="search" />{query && <button aria-label="清空搜索" onClick={() => setQuery('')}><X size={14} aria-hidden="true" /></button>}</div>
           </div>
           {!visibleSites.length ? <div className="overview-empty filtered-empty"><span className="overview-empty-icon"><Search size={27} strokeWidth={1.5} aria-hidden="true" /></span><h3>没有找到匹配的站点</h3><p>试试其他名称、网址，或调整状态筛选。</p><button className="secondary-button" onClick={clearFilters}>清除筛选</button></div>
-            : <div className="overview-table-wrap"><table className="overview-table"><caption className="sr-only">网站余额及监控状态</caption><thead><tr>{['站点信息', '可用余额', '预警阈值', '监控状态', '最近检查', '操作'].map((title) => <th key={title} scope="col">{title}</th>)}</tr></thead>
+            : <div className="overview-table-wrap"><table className="overview-table"><caption className="sr-only">网站余额及监控状态</caption><thead><tr>{['站点信息', '可用余额', '今日实时消耗', '预警阈值', '监控状态', '最近检查', '操作'].map((title) => <th key={title} scope="col">{title}</th>)}</tr></thead>
               <tbody>{visibleSites.map((site) => {
                 const result = results[site.id];
                 const status = siteStatus(site, result);
                 const currency = result?.currency || site.currency;
                 const siteName = site.name || '未命名站点';
+                const today = new Intl.DateTimeFormat('en-CA', { timeZone: site.timezone || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+                const todayUsage = result?.ok && result.todayUsage?.date === today ? result.todayUsage : null;
                 return <tr key={site.id} className={`overview-row row-${status.kind}`}>
                   <td className="overview-site" data-label="站点"><span className={`site-avatar avatar-${site.siteType}`} aria-hidden="true">{siteName.trim().charAt(0).toLocaleUpperCase()}</span><div className="overview-site-info"><button className="overview-site-link" onClick={() => onEdit(site.id)}>{siteName}</button><span className="overview-site-meta"><span className="site-type-tag">{typeNames[site.siteType] || '自动识别'}</span><span className="overview-site-url" title={site.baseUrl}>{site.baseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span></span></div></td>
                   <td className="overview-balance" data-label="可用余额"><strong>{result?.ok ? formatBalance(result.balance) : '—'}</strong><span>{currency || '—'}</span></td>
+                  <td className="overview-usage" data-label="今日实时消耗" title={result?.ok ? result.todayUsageError || '按站点时区统计今日截至本次检查的消耗' : undefined}><strong>{formatBalance(todayUsage?.cost)}</strong><span>{todayUsage?.currency || currency || '—'}</span></td>
                   <td className="overview-threshold" data-label="预警阈值"><span>{formatBalance(site.threshold)}</span><small>{currency || '—'}</small></td>
                   <td className="overview-status" data-label="监控状态"><Status site={site} result={result} checking={checkingIds.includes(site.id)} />{site.enabled && result?.ok === false && <small className="overview-error" title={result.message}>{result.message || '请检查站点配置'}</small>}{site.enabled && result?.notificationError && <small className="overview-error" title={result.notificationError}>通知失败：{result.notificationError}</small>}</td>
                   <td className="overview-checked" data-label="最近检查"><time dateTime={result?.checkedAt || undefined}>{formatTime(result?.checkedAt)}</time><small><RefreshCw size={11} aria-hidden="true" />每 {formatInterval(site.intervalSeconds)}检查</small></td>
                   <td className="overview-action" data-label="操作"><button className="overview-open" onClick={() => onOpen(site)}>进入网站 <ArrowUpRight size={16} aria-hidden="true" /></button></td>
                 </tr>;
               })}</tbody>
-              {visibleSites.length > 0 && <tfoot><tr className="overview-total-row"><th scope="row">合计余额</th><td colSpan={5}><div className="overview-total-content">
+              {visibleSites.length > 0 && <tfoot><tr className="overview-total-row"><th scope="row">合计余额</th><td colSpan={6}><div className="overview-total-content">
                 <div className="overview-total-amounts">{[...visibleBalanceTotals].length > 0
                   ? [...visibleBalanceTotals].map(([currency, amount]) => <span className="overview-total-amount" key={currency}><small>{currency}</small><strong>{formatBalance(amount)}</strong></span>)
                   : <strong className="overview-total-empty">暂无可汇总余额</strong>}</div>

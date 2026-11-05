@@ -159,6 +159,7 @@ test('移动端看板没有横向溢出', async ({ page }, testInfo) => {
 
 test('概览按状态与名称筛选，并适配混合状态的多站点布局', async ({ page }, testInfo) => {
   const checkedAt = '2026-10-21T02:00:00Z';
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockApi(page, {
     sites: [
@@ -169,7 +170,7 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
       { ...site, id: 'epsilon', name: '已归档站点', enabled: false, baseUrl: 'https://archive.example.com' },
     ],
     results: {
-      alpha: { ok: true, balance: 1280.36, currency: 'CNY', checkedAt },
+      alpha: { ok: true, balance: 1280.36, currency: 'CNY', todayUsage: { date, cost: 23.45, currency: 'CNY' }, checkedAt },
       beta: { ok: true, balance: 4.5, currency: 'USD', checkedAt },
       gamma: { ok: false, message: '登录会话已过期，请检查认证信息', checkedAt },
       epsilon: { ok: true, balance: 320, currency: 'CNY', checkedAt },
@@ -180,6 +181,8 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await expect(rows).toHaveCount(5);
   await expect(rows.getByText('1,280.36')).toBeVisible();
   await expect(rows.getByText('4.50')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '今日实时消耗' })).toBeVisible();
+  await expect(rows.locator('.overview-usage').getByText('23.45')).toBeVisible();
   const totals = page.getByRole('region', { name: '可用余额总览' });
   await expect(totals.locator('.balance-total').filter({ hasText: 'CNY' })).toContainText('1,280.36');
   await expect(totals.locator('.balance-total').filter({ hasText: 'USD' })).toContainText('4.50');
@@ -207,6 +210,7 @@ test('概览按状态与名称筛选，并适配混合状态的多站点布局',
   await page.screenshot({ path: testInfo.outputPath('dashboard-desktop.png'), fullPage: true });
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    await expect(rows.locator('.overview-usage').getByText('23.45')).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
     await expect(page.getByRole('button', { name: '添加站点', exact: true })).toBeVisible();

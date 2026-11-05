@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
@@ -41,6 +41,32 @@ async function openSiteSettings(user) {
 }
 
 describe('React 页面流程', () => {
+  it('概览显示今日消耗并随余额同步，零消耗有效，历史与失败数据不冒充今日消耗', async () => {
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const { state, fetch } = mockApi({
+      sites: [initialSite, { ...initialSite, id: 'beta', name: 'Beta' }, { ...initialSite, id: 'gamma', name: 'Gamma' }],
+      results: {
+        alpha: { ok: true, balance: 100, todayUsage: { date, cost: 0, currency: 'CNY' } },
+        beta: { ok: true, balance: 200, todayUsage: { date: '2000-01-01', cost: 12 } },
+        gamma: { ok: false, todayUsage: { date, cost: 99 } },
+      },
+    });
+    render(<App />);
+    expect(await screen.findByRole('columnheader', { name: '今日实时消耗' })).toBeInTheDocument();
+    const row = (name) => screen.getByRole('button', { name, exact: true }).closest('tr');
+    expect(within(row('Alpha')).getByText('0.00')).toBeInTheDocument();
+    expect(row('Beta').querySelector('.overview-usage strong')).toHaveTextContent('—');
+    expect(row('Gamma').querySelector('.overview-usage strong')).toHaveTextContent('—');
+    state.results.alpha = { ok: true, balance: 90, todayUsage: { date, cost: 10.25, currency: 'CNY' } };
+    fireEvent(document, new Event('visibilitychange'));
+    expect(await within(row('Alpha')).findByText('10.25')).toBeInTheDocument();
+    expect(fetch.mock.calls.filter(([url]) => url === '/api/sites')).toHaveLength(2);
+    state.results.alpha = { ok: true, balance: 90, todayUsage: null, todayUsageError: '用量接口不可用' };
+    fireEvent(document, new Event('visibilitychange'));
+    await waitFor(() => expect(row('Alpha').querySelector('.overview-usage strong')).toHaveTextContent('—'));
+    expect(row('Alpha').querySelector('.overview-balance strong')).toHaveTextContent('90.00');
+  });
+
   it('显示登录错误，并在成功登录后打开看板', async () => {
     mockApi({ authenticated: false, sites: [] });
     const user = userEvent.setup();
