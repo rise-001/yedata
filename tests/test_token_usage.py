@@ -78,6 +78,16 @@ class TokenUsageTests(unittest.TestCase):
     def test_sub2_uses_v1_usage_and_today_actual_cost_without_balance_scaling(self):
         site = {**SITE, 'siteType': 'sub2', 'balanceDivisor': 500000, 'balanceMultiplier': 10}
         for response, expected in (
+            ({'mode': 'unrestricted', 'usage': {
+                'today': {'actual_cost': 1.25, 'cost': 99},
+                'total': {'actual_cost': 999},
+            }}, 1.25),
+            ({'mode': 'quota_limited', 'usage': {'today': {'actual_cost': 0}}}, 0),
+            ({'data': {'usage': {'today': {'actual_cost': '2.345678'}}}}, 2.345678),
+            ({'unit': 'USD', 'usage': {
+                'today': {'actual_cost': 2.517114045, 'cost': 8.39038015},
+                'total': {'actual_cost': 1001.7051126285},
+            }}, 2.517114045),
             ({'today': {'actual_cost': 0}, 'total': {'actual_cost': 999}}, 0),
             ({'data': {'today': {'actual_cost': '1.234567'}}}, 1.234567),
         ):
@@ -94,7 +104,10 @@ class TokenUsageTests(unittest.TestCase):
             self.assertEqual(balance.get_token_usage(site)['todayActualCost'], 2)
 
     def test_sub2_rejects_missing_or_invalid_today_cost_instead_of_reporting_zero(self):
-        for response in ({}, [], {'today': None}, {'today': {'actual_cost': True}},
+        for response in ({}, [], {'usage': None}, {'usage': {}}, {'usage': {'today': None}},
+                         {'usage': {'today': {'cost': 25}, 'total': {'actual_cost': 999}}},
+                         {'usage': {'today': {'actual_cost': 'nan'}}},
+                         {'today': None}, {'today': {'actual_cost': True}},
                          {'today': {'actual_cost': 'nan'}}, {'today': {'actual_cost': 'inf'}},
                          {'today': {'actual_cost': 'invalid'}}):
             with self.subTest(response=response), patch.object(balance, 'fetch_json', return_value=response):
@@ -112,7 +125,7 @@ class TokenUsageTests(unittest.TestCase):
             token = headers['Authorization']
             if token == 'Bearer sk-second':
                 raise ValueError('invalid sk-second')
-            return {'today': {'actual_cost': 0 if token == 'Bearer sk-first' else '2.5'}}
+            return {'usage': {'today': {'actual_cost': 0 if token == 'Bearer sk-first' else '2.5'}}}
 
         with patch.object(balance, 'fetch_json', side_effect=fetch) as fetch_mock:
             result = balance.get_token_usage(site)
@@ -158,7 +171,9 @@ class TokenUsageTests(unittest.TestCase):
         client.cookies['balance_session'] = 'admin-session'
         with patch.object(state, 'saved_sites', [site]), patch.dict(
             state.sessions, {'admin-session': {'expires_at': time.time() + 60}}, clear=True
-        ), patch.object(balance, 'fetch_json', return_value={'today': {'actual_cost': 1.25}}):
+        ), patch.object(balance, 'fetch_json', return_value={
+            'mode': 'unrestricted', 'usage': {'today': {'actual_cost': 1.25}},
+        }):
             response = client.post('/api/usage/token', data=json.dumps({'siteId': SITE['id']}),
                                    content_type='application/json')
         self.assertEqual(response.status_code, 200)

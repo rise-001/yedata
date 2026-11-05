@@ -118,14 +118,16 @@ def _get_token_usage(cfg: dict, token: str) -> dict:
         )
         inner = raw.get('data') if isinstance(raw, dict) else None
         data = inner if isinstance(inner, dict) else raw
-        today = data.get('today') if isinstance(data, dict) else None
+        usage = data.get('usage') if isinstance(data, dict) else None
+        stats = usage if isinstance(usage, dict) else data
+        today = stats.get('today') if isinstance(stats, dict) else None
         value = today.get('actual_cost') if isinstance(today, dict) else None
         try:
             cost = float(value) if not isinstance(value, bool) else float('nan')
         except (TypeError, ValueError):
             cost = float('nan')
         if not isfinite(cost):
-            raise ValueError('用量接口未返回有效的 today.actual_cost')
+            raise ValueError('用量接口未返回有效的 usage.today.actual_cost')
         return {'todayActualCost': cost}
 
     raw = fetch_json(

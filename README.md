@@ -49,7 +49,7 @@ New API 查询会在填写 `New-Api-User ID` 时携带对应请求头。账号�
 
 Sub2 和 New API 站点均支持独立的“消耗查询 API Keys”（通常以 `sk-` 开头），每个站点最多添加 20 个，可设置名称、修改或删除。点击“消耗查询”会先保存配置，再分别查询各个 Key；单个 Key 失败不影响其他结果。
 
-- **Sub2**：请求站点接口地址下的 `GET /v1/usage`（例如 `https://api.deepspacecode.chat/v1/usage`），发送 `Authorization: Bearer <API Key>`，超时为 20 秒。今日使用金额直接读取 `today.actual_cost`，不套用余额换算除数或倍率；展示每个 Key 的今日金额及合计，部分失败时显示仅成功项的小计。金额单位沿用上游接口含义，不自动换算币种。此接口与日报使用的 `/api/v1/usage/dashboard/trend` 独立。
+- **Sub2**：请求站点接口地址下的 `GET /v1/usage`（例如 `https://api.deepspacecode.chat/v1/usage`），发送 `Authorization: Bearer <API Key>`，超时为 20 秒。今日使用金额读取 `usage.today.actual_cost`（同时兼容顶层 `today.actual_cost` 和 `data` 包装），不套用余额换算除数或倍率；展示每个 Key 的今日金额及合计，部分失败时显示仅成功项的小计。金额单位沿用上游接口含义，不自动换算币种。此接口与日报使用的 `/api/v1/usage/dashboard/trend` 独立。
 - **New API**：请求 `/api/usage/token/`，发送 `Authorization: Bearer <API Key>`，逐个展示令牌名称、已用额度、剩余额度、总额度、到期时间和模型限制。
 
 这些 Key 与余额查询使用的账号、密码、控制台访问令牌和 `New-Api-User ID` 独立。Key 只保存在服务端数据库，页面仅收到名称和是否已保存的标记；留空保存保留对应 Key，删除并保存会移除对应 Key。旧的单 Key 配置会自动迁移。
