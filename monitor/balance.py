@@ -833,10 +833,7 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
 
     lines = []
     balance_totals: dict[str, float] = {}
-    usage_totals: dict[str, float] = {}
     ok_count = 0
-    usage_known = 0
-    usage_incomplete = False
 
     for site in enabled_sites:
         site_name = str(site.get('name') or site.get('baseUrl') or '未命名站点').strip()
@@ -846,22 +843,23 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
             ok_count += 1
             currency = result.get('currency', '')
             amount = f'{result["balance"]:.2f}'
-            usage = result.get('usage') or {}
+            usage_data = result.get('usage')
+            usage = usage_data or {}
             yesterday_usage = usage.get('cost') if (usage.get('source') == 'keys'
                                                    and usage.get('date') == yesterday) else None
             missing_keys = usage.get('failedCount', 0)
-            usage_incomplete |= yesterday_usage is None or missing_keys > 0
-            if yesterday_usage is not None:
-                usage_known += 1
-                usage_totals[currency] = usage_totals.get(currency, 0) + yesterday_usage
             balance_totals[currency] = balance_totals.get(currency, 0) + result['balance']
-            usage_text = (f'昨日 Key 消耗未获取（{result.get("usageError") or "请检查消耗查询配置"}）'
-                          if yesterday_usage is None else f'昨日 Key 消耗 {yesterday_usage:.2f}')
+            if yesterday_usage is None:
+                usage_error = result.get('usageError') or '请检查消耗查询配置'
+                usage_text = ('消耗未配置' if usage_data is None
+                              and '请先配置消耗查询 API Key' in usage_error
+                              else f'消耗未获取（{usage_error}）')
+            else:
+                usage_text = f'消耗 {yesterday_usage:.2f}'
             if missing_keys:
                 usage_text += f'（{"成功项小计，" if yesterday_usage is not None else ""}{missing_keys} 个 Key 未获取）'
             lines.append(f'> **{site_name}**：{amount}，{usage_text}')
         except Exception as exc:
-            usage_incomplete = True
             lines.append(f'> ❌ **{site_name}**：查询失败 - {str(exc) or "未知错误"}')
 
     def sum_text(totals: dict) -> str:
@@ -882,8 +880,6 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
         *lines,
         f'> 共 {len(enabled_sites)} 个站点{"，" + str(failed) + " 个查询失败" if failed else ""}',
         f'> **总余额**：{sum_text(balance_totals) or "--"}',
-        f'> **{yesterday} Key 总消耗**：{"暂无数据" if not usage_known else sum_text(usage_totals)}'
-        + ('（仅已获取 Key 的小计）' if usage_known and usage_incomplete else ''),
     ])
 
     try:

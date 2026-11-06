@@ -127,8 +127,8 @@ class NotificationTests(unittest.TestCase):
         self.assertEqual(get.call_args.args[0]['id'], 'alpha')
         report_text = send.call_args.args[1]
         self.assertEqual(get.call_args.kwargs, {'usage_day': '2026-11-04'})
-        self.assertIn('Alpha**：10.00，昨日 Key 消耗 2.00', report_text)
-        self.assertIn('2026-11-04 Key 总消耗**：2.00', report_text)
+        self.assertIn('Alpha**：10.00，消耗 2.00', report_text)
+        self.assertNotIn('Key 总消耗', report_text)
         self.assertNotIn('CNY', report_text)
         self.assertNotIn('阈值', report_text)
         send.side_effect = ValueError('send failed')

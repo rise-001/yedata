@@ -142,15 +142,30 @@ class DailyKeyUsageTests(unittest.TestCase):
                 patch.object(state, 'global_webhook', 'https://example.com/webhook'), \
                 patch.object(balance, 'get_balance', side_effect=results), \
                 patch.object(balance, 'record_daily_usage'), \
+                patch.object(balance, 'day_key_of', return_value='2026-11-05'), \
                 patch.object(balance, 'usage_for_day', return_value=999) as snapshots, \
                 patch.object(balance, 'send_wecom') as send:
             self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
         snapshots.assert_not_called()
         report = send.call_args.args[1]
-        self.assertIn('昨日 Key 消耗 1.25（成功项小计，1 个 Key 未获取）', report)
-        self.assertIn('Beta**：200.00，昨日 Key 消耗未获取', report)
-        self.assertIn('2026-11-04 Key 总消耗**：1.25（仅已获取 Key 的小计）', report)
+        self.assertIn('Alpha**：100.00，消耗 1.25（成功项小计，1 个 Key 未获取）', report)
+        self.assertIn('Beta**：200.00，消耗未获取', report)
+        self.assertNotIn('Key 总消耗', report)
+        self.assertNotIn('仅已获取 Key 的小计', report)
         self.assertNotIn('999', report)
+
+    def test_report_labels_missing_usage_keys_as_unconfigured(self):
+        result = {'balance': 100, 'currency': 'CNY', 'usage': None,
+                  'usageError': '请先配置消耗查询 API Key'}
+        with patch.object(state, 'saved_sites', [self.site]), \
+                patch.object(state, 'global_webhook', 'https://example.com/webhook'), \
+                patch.object(balance, 'get_balance', return_value=result), \
+                patch.object(balance, 'record_daily_usage'), \
+                patch.object(balance, 'send_wecom') as send:
+            self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
+        report = send.call_args.args[1]
+        self.assertIn('Alpha**：100.00，消耗未配置', report)
+        self.assertNotIn('请先配置消耗查询 API Key', report)
 
 
 if __name__ == '__main__':
