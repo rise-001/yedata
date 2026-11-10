@@ -8,6 +8,7 @@ urlpatterns = [
     path('api/sites',         views.api_sites),
     path('api/check',         views.api_check),
     path('api/usage/token',   views.api_token_usage),
+    path('api/usage/history', views.api_usage_history),
     path('api/check-many',    views.api_check_many),
     path('api/notify-test',   views.api_notify_test),
     path('api/scheduler',     views.api_scheduler),

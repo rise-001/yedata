@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, GripVertical, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
 import { formatBalance, formatInterval, formatTime, getTodayUsage, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
+import UsageHistory from './UsageHistory.jsx';
 
 export function Brand() {
   return <div className="brand"><span className="brand-mark">D</span><span>数据中心<small>DATA CENTER</small></span></div>;
@@ -223,6 +224,7 @@ export function Dashboard({ sites, results, checkingIds, onEdit, onOpen, onAdd }
       </section>
     </div>
 
+    <UsageHistory />
     <section className="overview-panel" aria-labelledby="balance-panel-title">
       <header className="overview-panel-header"><div className="overview-panel-title"><span className="panel-symbol"><Globe2 size={20} strokeWidth={1.7} aria-hidden="true" /></span><div><h2 id="balance-panel-title">网站余额<span className="panel-site-count">{sites.length}</span></h2><p>集中查看每个站点的余额与运行状态</p></div></div>
         {sites.length > 0 && <button className="primary-button dashboard-add" onClick={onAdd}><Plus size={16} aria-hidden="true" />添加站点</button>}

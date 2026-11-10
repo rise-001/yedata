@@ -8,6 +8,7 @@ import mimetypes
 import os
 import secrets
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,7 +21,7 @@ from monitor import state
 from monitor.adapters import (
     normalize_site, public_site, validate_site_list, with_saved_secrets,
 )
-from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom, summarize_key_usage
+from monitor.balance import check_and_notify, get_token_usage, get_weekly_key_usage, record_daily_usage, send_wecom, summarize_key_usage
 from monitor.storage import save_sites, save_upstream_sessions
 
 logger = logging.getLogger(__name__)
@@ -240,6 +241,36 @@ def api_token_usage(request: HttpRequest) -> HttpResponse:
         return _json({'ok': True, 'data': data, 'todayUsage': today_usage, 'todayUsageError': today_error})
     except Exception as exc:
         return _err(str(exc), getattr(exc, 'status', 400))
+
+
+@csrf_exempt
+def api_usage_history(request: HttpRequest) -> HttpResponse:
+    if not _require_session(request):
+        return _err('请先登录管理后台', 401)
+    if request.method != 'GET':
+        return _err('Method not allowed', 405)
+    sites = [dict(site) for site in state.saved_sites if site.get('enabled', True) is not False]
+    queried_at = datetime.now(timezone.utc)
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        histories = list(pool.map(lambda site: get_weekly_key_usage(site, queried_at), sites))
+    groups = {}
+    for site, history in zip(sites, histories):
+        currency = str(site.get('currency') or '').strip() or 'CNY'
+        zone = site.get('timezone') or 'Asia/Shanghai'
+        group = groups.setdefault((currency, zone), {
+            'currency': currency, 'timezone': zone, 'siteCount': 0, 'days': {},
+        })
+        group['siteCount'] += 1
+        for point in history:
+            day = group['days'].setdefault(point['date'], {
+                'date': point['date'], 'cost': None, 'successCount': 0, 'failedCount': 0,
+            })
+            if point['cost'] is not None:
+                day['cost'] = (day['cost'] or 0) + point['cost']
+            day['successCount'] += point['successCount']
+            day['failedCount'] += point['failedCount']
+    series = [{**group, 'days': list(group['days'].values())} for group in groups.values()]
+    return _json({'ok': True, 'data': {'series': series, 'queriedAt': queried_at.isoformat()}})
 
 
 @csrf_exempt

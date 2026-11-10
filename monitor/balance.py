@@ -211,6 +211,10 @@ def _get_sub2_daily_usage(cfg: dict, token: str, usage_day: str, days: int) -> f
         url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
         headers={'Authorization': f'Bearer {token}'}, timeout=20,
     )
+    return _sub2_daily_cost(raw, usage_day)
+
+
+def _sub2_daily_cost(raw: dict, usage_day: str) -> float:
     inner = raw.get('data') if isinstance(raw, dict) else None
     data = inner if isinstance(inner, dict) else raw
     points = data.get('daily_usage') if isinstance(data, dict) else None
@@ -234,6 +238,73 @@ def _get_sub2_daily_usage(cfg: dict, token: str, usage_day: str, days: int) -> f
     if not isfinite(total):
         raise ValueError('Key 历史日用量合计无效')
     return total
+
+
+def get_weekly_key_usage(site: dict, queried_at: datetime) -> list[dict]:
+    """Read seven calendar days, including today, without cumulative snapshots."""
+    cfg = site_config(site)
+    today = day_key_of(cfg.get('timezone') or 'Asia/Shanghai', queried_at)
+    days = [shift_day_key(today, offset) for offset in range(-6, 1)]
+    keys = get_usage_keys(cfg, require_tokens=True)
+    supported = is_sub2_site(cfg) or is_newapi_site(cfg)
+
+    def unavailable():
+        return [{'date': day, 'cost': None, 'successCount': 0,
+                 'failedCount': max(1, len(keys))} for day in days]
+
+    if not supported or not keys:
+        return unavailable()
+
+    def load_key(key):
+        try:
+            if is_sub2_site(cfg):
+                params = urlencode({'days': 7, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
+                raw = fetch_json(url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
+                                 headers={'Authorization': f'Bearer {key["token"]}'}, timeout=20)
+                return {'raw': raw}
+            return {'name': _get_token_usage(cfg, key['token'])['name']}
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=min(5, len(keys))) as pool:
+        loaded = list(pool.map(load_key, keys))
+    names = [item['name'] for item in loaded if item.get('name')]
+    duplicates = {name for name in names if names.count(name) > 1}
+
+    def daily_cost(task):
+        item, day = task
+        try:
+            if is_sub2_site(cfg):
+                raw = item['raw']
+                if day != today:
+                    return _sub2_daily_cost(raw, day)
+                inner = raw.get('data')
+                data = inner if isinstance(inner, dict) else raw
+                stats = data.get('usage', data)
+                value = stats.get('today', {}).get('actual_cost')
+                cost = float(value) if not isinstance(value, bool) else float('nan')
+            else:
+                name = item['name']
+                if not name or name in duplicates:
+                    return None
+                cost = _get_newapi_daily_usage(cfg, name, queried_at,
+                                              usage_day=None if day == today else day)['cost']
+            return cost if isfinite(cost) else None
+        except Exception:
+            return None
+
+    tasks = [(item, day) for day in days for item in loaded]
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        costs = list(pool.map(daily_cost, tasks))
+    result = []
+    for index, day in enumerate(days):
+        values = [cost for cost in costs[index * len(keys):(index + 1) * len(keys)] if cost is not None]
+        total = sum(values) if values else None
+        if total is not None and not isfinite(total):
+            values, total = [], None
+        result.append({'date': day, 'cost': total, 'successCount': len(values),
+                       'failedCount': len(keys) - len(values)})
+    return result
 
 
 def _get_newapi_today_usage(cfg: dict, key_name: str, queried_at: datetime) -> dict:

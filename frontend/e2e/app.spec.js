@@ -1,5 +1,37 @@
 import { expect, test } from '@playwright/test';
 
+test('七天消耗柱状图在桌面和手机上显示每日金额并支持切换币种', async ({ page }) => {
+  await mockApi(page);
+  const days = Array.from({ length: 7 }, (_, index) => ({
+    date: `2026-11-0${index + 1}`, cost: index === 1 ? null : index * 1.25,
+    successCount: index === 1 ? 0 : 1, failedCount: index === 1 || index === 3 ? 1 : 0,
+  }));
+  await page.route('**/api/usage/history', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data: {
+      queriedAt: '2026-11-07T08:00:00Z', series: [
+        { currency: 'CNY', timezone: 'Asia/Shanghai', siteCount: 2, days },
+        { currency: 'USD', timezone: 'UTC', siteCount: 1, days: days.map((day) => ({ ...day, cost: 2, failedCount: 0 })) },
+      ],
+    } }),
+  }));
+  await page.goto('/');
+  const chart = page.getByRole('region', { name: '最近七天消耗' });
+  await expect(chart.getByRole('listitem')).toHaveCount(7);
+  await expect(chart.getByLabel('2026-11-01：0 CNY', { exact: true })).toBeVisible();
+  await expect(chart.getByLabel('2026-11-02：未获取，1 项未获取', { exact: true })).toBeVisible();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await chart.scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const bar = chart.locator('.usage-chart-bar').nth(6);
+    expect((await bar.boundingBox()).height).toBeGreaterThan(100);
+    await chart.screenshot({ path: `test-results/usage-history-${width}.png` });
+  }
+  await chart.getByLabel('消耗统计币种与时区').selectOption('USD|UTC');
+  await expect(chart.getByText('七天总消耗', { exact: true })).toBeVisible();
+  await expect(chart.getByLabel('2026-11-01：2 USD', { exact: true })).toBeVisible();
+});
+
 const site = {
   id: 'alpha',
   name: 'Alpha',
