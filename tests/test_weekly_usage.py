@@ -77,28 +77,39 @@ class WeeklyUsageTests(unittest.TestCase):
             self.assertTrue(all(day['cost'] is None for day in days))
             self.assertEqual(upstream.call_count, len(site['usageKeys']))
 
-    def test_endpoint_groups_currency_and_timezone_and_excludes_disabled_sites(self):
+    def test_refresh_queries_only_requested_day(self):
+        def fetch(url, **kwargs):
+            if urlsplit(url).path == '/api/usage/token':
+                return {'data': {'name': kwargs['headers']['Authorization'][7:]}}
+            query = parse_qs(urlsplit(url).query)
+            self.assertEqual(int(query['end_timestamp'][0]), int(self.now.timestamp()))
+            return {'success': True, 'data': {'quota': 500000}}
+        with patch.object(balance, 'fetch_json', side_effect=fetch) as upstream:
+            days = balance.get_weekly_key_usage({**self.site, 'siteType': 'newapi'}, self.now,
+                                              requested_days=['2026-11-05'])
+        self.assertEqual(upstream.call_count, 4)
+        self.assertEqual(days, [{'date': '2026-11-05', 'cost': 2,
+                                 'successCount': 2, 'failedCount': 0}])
+
+    def test_endpoint_reads_database_and_only_post_refreshes_enabled_sites(self):
         sites = [self.site, {**self.site, 'id': 'beta'},
                  {**self.site, 'id': 'usd', 'currency': 'USD'},
                  {**self.site, 'id': 'utc', 'timezone': 'UTC'},
                  {**self.site, 'id': 'disabled', 'enabled': False}]
-        def history(site, now):
-            return [{'date': '2026-11-05', 'cost': 1.25 if site['id'] != 'beta' else None,
-                     'successCount': int(site['id'] != 'beta'), 'failedCount': int(site['id'] == 'beta')}]
         client = Client()
         client.cookies['balance_session'] = 'weekly-test-session'
         with patch.object(state, 'saved_sites', sites), patch.dict(
             state.sessions, {'weekly-test-session': {'expires_at': time.time() + 60}}, clear=True
-        ), patch('monitor.views.get_weekly_key_usage', side_effect=history) as query:
+        ), patch('monitor.views.read_usage_history', return_value={'series': [], 'source': 'database'}) as read, \
+                patch('monitor.views.refresh_usage_history') as refresh:
             response = client.get('/api/usage/history')
-            self.assertEqual(client.post('/api/usage/history').status_code, 405)
+            refresh.assert_not_called()
+            self.assertEqual(client.post('/api/usage/history').status_code, 200)
+            self.assertEqual(client.put('/api/usage/history').status_code, 405)
+            refresh.assert_called_once_with(sites[:-1], force=True)
+            self.assertEqual(read.call_count, 2)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(query.call_count, 4)
-        groups = response.json()['data']['series']
-        self.assertEqual(len(groups), 3)
-        self.assertEqual(groups[0]['siteCount'], 2)
-        self.assertEqual(groups[0]['days'][0], {'date': '2026-11-05', 'cost': 1.25,
-                                              'successCount': 1, 'failedCount': 1})
+        self.assertEqual(response.json()['data']['source'], 'database')
         self.assertNotIn('secret', response.content.decode())
         self.assertNotIn('sk-', response.content.decode())
         self.assertEqual(Client().get('/api/usage/history').status_code, 401)

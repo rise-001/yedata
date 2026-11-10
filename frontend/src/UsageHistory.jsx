@@ -14,7 +14,7 @@ export default function UsageHistory() {
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    api('usage/history', { signal: controller.signal }).then(({ data }) => {
+    api('usage/history', { signal: controller.signal, method: revision ? 'POST' : 'GET' }).then(({ data }) => {
       if (!controller.signal.aborted) setData(data || { series: [] });
     }).catch((error) => {
       if (!controller.signal.aborted) setError(error.message);
@@ -24,6 +24,21 @@ export default function UsageHistory() {
     return () => controller.abort();
   }, [revision]);
 
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timer = setInterval(async () => {
+      if (document.hidden || loading) return;
+      try {
+        const { data } = await api('usage/history', { signal: controller.signal, method: 'GET' });
+        if (active) { setData(data); setError(''); }
+      } catch (error) {
+        if (active) setError(error.message);
+      }
+    }, 15000);
+    return () => { active = false; clearInterval(timer); controller.abort(); };
+  }, [loading]);
+
   const series = data?.series || [];
   const groupKey = (item) => `${item.currency}|${item.timezone}`;
   const group = series.find((item) => groupKey(item) === selection) || series[0];
@@ -31,6 +46,8 @@ export default function UsageHistory() {
   const values = days.filter((day) => day.cost != null);
   const total = values.reduce((sum, day) => sum + day.cost, 0);
   const partial = days.some((day) => day.failedCount > 0);
+  const stale = days.some((day) => day.staleCount > 0);
+  const pending = days.some((day) => day.pendingCount > 0);
   const upper = Math.max(0, ...values.map((day) => day.cost)) || 1;
   const lower = Math.min(0, ...values.map((day) => day.cost));
   const span = upper - lower;
@@ -52,15 +69,15 @@ export default function UsageHistory() {
         <div className="usage-chart-plot"><div className="usage-chart-grid" aria-hidden="true"><i /><i /><i /></div><div className="usage-chart-zero" style={{ bottom: `calc(30px + ${baseline}% - ${baseline * 0.3}px)` }} aria-hidden="true" />
           <ul className="usage-chart-bars" aria-label="每日消耗">{days.map((day, index) => {
             const known = day.cost != null;
-            const label = `${day.date}：${known ? `${amount(day.cost)} ${group.currency}${day.failedCount ? '，成功项小计' : ''}` : '未获取'}${day.failedCount ? `，${day.failedCount} 项未获取` : ''}${index === days.length - 1 ? '，今日截至查询时刻' : ''}`;
-            return <li key={day.date} tabIndex={0} aria-label={label} title={label} className={index === days.length - 1 ? 'is-today' : ''}>
+            const label = `${day.date}：${known ? `${amount(day.cost)} ${group.currency}${day.failedCount ? '，成功项小计' : ''}` : '未获取'}${day.failedCount ? `，${day.failedCount} 项未获取` : ''}${day.staleCount ? '，保留上次成功数据' : ''}${index === days.length - 1 ? '，今日截至查询时刻' : ''}`;
+            return <li key={day.date} tabIndex={0} aria-label={label} title={`${label}${day.updatedAt ? `；数据更新于 ${formatTime(day.updatedAt)}` : ''}`} className={index === days.length - 1 ? 'is-today' : ''}>
               <div className="usage-chart-column"><span className="usage-chart-value" style={{ bottom: `${baseline + (known ? Math.max(0, day.cost) / span * 100 : 0)}%` }}>{known ? amount(day.cost) : '—'}{known && day.failedCount > 0 ? '*' : ''}</span><div className={`usage-chart-bar ${known ? '' : 'is-missing'}`} style={{ height: `${known ? Math.abs(day.cost) / span * 100 : 0}%`, bottom: `${day.cost < 0 ? baseline + day.cost / span * 100 : baseline}%` }} /></div>
               <span className="usage-chart-date">{day.date.slice(5).replace('-', '/')}{index === days.length - 1 && <small>今天</small>}</span>
             </li>;
           })}</ul>
         </div>
       </div></div>
-      <footer className="overview-panel-footer"><span>{partial ? '* 部分数据未获取，金额为成功项小计；— 表示未获取' : '仅统计已配置的 API Key 消耗'} · 今天截至查询时刻</span><span>更新于 {formatTime(data.queriedAt)}</span></footer>
+      <footer className="overview-panel-footer"><span>{pending ? '后台正在补齐数据；— 表示未获取' : partial ? '* 部分数据未获取，金额为成功项小计；— 表示未获取' : '仅统计已配置的 API Key 消耗'}{stale && ' · 部分数据更新失败或已过期，保留上次成功数据'} · 今天截至查询时刻</span><span>{data.queriedAt ? `最早数据更新于 ${formatTime(data.queriedAt)}` : '等待后台首次更新'}</span></footer>
     </>}
   </section>;
 }

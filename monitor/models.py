@@ -153,3 +153,22 @@ class DailyReport(models.Model):
     class Meta:
         app_label = 'monitor'
         unique_together = [('timezone', 'day_key')]
+
+
+class KeyUsageDay(models.Model):
+    """Daily configured-key consumption; separate from account snapshots."""
+    site_id = models.CharField(max_length=64)
+    fingerprint = models.CharField(max_length=64)
+    day_key = models.CharField(max_length=10)
+    cost = models.FloatField(null=True)
+    success_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(null=True)
+    attempted_at = models.DateTimeField()
+    refresh_failed = models.BooleanField(default=False)
+    finalized = models.BooleanField(default=False)
+
+    class Meta:
+        app_label = 'monitor'
+        constraints = [models.UniqueConstraint(
+            fields=['site_id', 'fingerprint', 'day_key'], name='unique_key_usage_day')]

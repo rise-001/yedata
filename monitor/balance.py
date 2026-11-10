@@ -240,11 +240,15 @@ def _sub2_daily_cost(raw: dict, usage_day: str) -> float:
     return total
 
 
-def get_weekly_key_usage(site: dict, queried_at: datetime) -> list[dict]:
+def get_weekly_key_usage(site: dict, queried_at: datetime, *, requested_days: list[str] | None = None) -> list[dict]:
     """Read seven calendar days, including today, without cumulative snapshots."""
     cfg = site_config(site)
     today = day_key_of(cfg.get('timezone') or 'Asia/Shanghai', queried_at)
     days = [shift_day_key(today, offset) for offset in range(-6, 1)]
+    if requested_days is not None:
+        days = [day for day in days if day in requested_days]
+    if not days:
+        return []
     keys = get_usage_keys(cfg, require_tokens=True)
     supported = is_sub2_site(cfg) or is_newapi_site(cfg)
 

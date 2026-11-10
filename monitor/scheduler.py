@@ -81,6 +81,15 @@ def start():
 
     _scheduler = BackgroundScheduler(timezone='UTC')
 
+    @_scheduler.scheduled_job('interval', seconds=15, id='usage_history_tick', max_instances=1)
+    def usage_tick():
+        from monitor.usage_cache import refresh_usage_history
+        sites = [dict(site) for site in state.saved_sites if site.get('enabled', True) is not False]
+        try:
+            refresh_usage_history(sites)
+        except Exception:
+            logger.exception('Daily key consumption cache refresh failed')
+
     @_scheduler.scheduled_job('interval', seconds=5, id='balance_tick', max_instances=1)
     def tick():
         now = time.time()
@@ -130,6 +139,12 @@ def start():
             record_daily_usage(full_site, result)
             state.scheduled_results[sid] = {**result, 'ok': True,
                                              'checkedAt': _now_iso()}
+            try:
+                from datetime import datetime, timezone
+                from monitor.usage_cache import save_today_usage
+                save_today_usage(full_site, result.get('todayUsage'), datetime.now(timezone.utc))
+            except Exception:
+                logger.exception('Failed to cache daily key consumption for site %s', sid)
         except Exception as exc:
             state.scheduled_results[sid] = {'ok': False, 'message': str(exc),
                                              'checkedAt': _now_iso()}
