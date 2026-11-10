@@ -20,8 +20,7 @@ export function Field({ label, value, onChange, children, wide, ...props }) {
 function TokenUsageResults({ result, isSub2 }) {
   const usage = result.data;
   const keys = usage?.keys || [{ keyId: 'default', keyName: usage?.name || '令牌消耗', ok: true, data: usage }];
-  const amount = (value) => value == null || !Number.isFinite(Number(value)) ? '—'
-    : Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 6 });
+  const amount = formatBalance;
   const expires = (value) => value === -1 || value === 0 ? '永不过期'
     : value ? new Date(value * 1000).toLocaleString('zh-CN', { hour12: false }) : '未提供';
   const todayFailed = usage?.todayFailedCount ?? usage?.failedCount;

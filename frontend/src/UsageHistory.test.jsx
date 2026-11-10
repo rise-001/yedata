@@ -16,15 +16,15 @@ it('展示七天柱形、零消耗、缺失与小计，并可切换币种时区'
   render(<UsageHistory />);
   const bars = await screen.findByRole('list', { name: '每日消耗' });
   expect(within(bars).getAllByRole('listitem')).toHaveLength(7);
-  expect(within(bars).getByLabelText('2026-11-01：0 CNY')).toBeInTheDocument();
+  expect(within(bars).getByLabelText('2026-11-01：0.00 CNY')).toBeInTheDocument();
   expect(within(bars).getByLabelText('2026-11-03：未获取，1 项未获取')).toBeInTheDocument();
-  expect(within(bars).getByLabelText('2026-11-04：2 CNY，成功项小计，1 项未获取')).toBeInTheDocument();
+  expect(within(bars).getByLabelText('2026-11-04：2.00 CNY，成功项小计，1 项未获取')).toBeInTheDocument();
   expect(within(bars).getByLabelText(/今日截至查询时刻/)).toBeInTheDocument();
   expect(screen.getByText('七天消耗小计')).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText('消耗统计币种与时区'), 'USD|UTC');
   expect(screen.getByText('七天总消耗')).toBeInTheDocument();
-  expect(screen.getByText('21')).toHaveTextContent('21 USD');
-  expect(within(bars).getByLabelText('2026-11-01：3 USD')).toBeInTheDocument();
+  expect(screen.getByText('21.00')).toHaveTextContent('21.00 USD');
+  expect(within(bars).getByLabelText('2026-11-01：3.00 USD')).toBeInTheDocument();
 });
 
 it('请求失败显示重试入口，重试后可展示空状态', async () => {

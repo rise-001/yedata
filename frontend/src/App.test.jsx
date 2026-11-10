@@ -239,8 +239,8 @@ describe('React 页面流程', () => {
     expect(screen.getByLabelText('消耗查询 API Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     expect(await screen.findByText('production')).toBeInTheDocument();
-    expect(screen.getByText('1,200')).toBeInTheDocument();
-    expect(screen.getByText('3,800')).toBeInTheDocument();
+    expect(screen.getByText('1,200.00')).toBeInTheDocument();
+    expect(screen.getByText('3,800.00')).toBeInTheDocument();
     expect(screen.getByText('永不过期')).toBeInTheDocument();
     expect(screen.getByText('gpt-4o')).toBeInTheDocument();
     const call = fetch.mock.calls.find(([url]) => url === '/api/usage/token');
@@ -279,7 +279,7 @@ describe('React 页面流程', () => {
     expect(screen.getByText('今日消耗金额')).toBeInTheDocument();
     expect(screen.getByText('今日用量：1 个成功，0 个未获取')).toBeInTheDocument();
     expect(screen.getByText(/统计范围：.*00:00:00.*00:05:00/)).toBeInTheDocument();
-    expect(screen.getByText('136.460558')).toBeInTheDocument();
+    expect(screen.getByText('136.46')).toBeInTheDocument();
     expect(screen.getAllByText('不限额')).toHaveLength(2);
     expect(screen.getByText('永不过期')).toBeInTheDocument();
     expect(screen.getByText('未限制')).toBeInTheDocument();
@@ -317,7 +317,7 @@ describe('React 页面流程', () => {
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Key 名称未保存');
     expect(screen.getByText('今日消耗金额')).toBeInTheDocument();
-    expect(screen.getByText('100')).toBeInTheDocument();
+    expect(screen.getAllByText('100.00').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Key 名称 1')).toHaveValue('gemini');
     expect(state.sites[0].usageKeys[0].name).toBe('默认 Key');
     state.rejectNameSave = false;
@@ -336,7 +336,7 @@ describe('React 页面流程', () => {
     render(<App />); await openSiteSettings(user);
     await user.click(screen.getByRole('button', { name: '消耗查询' }));
     expect(await screen.findByText('今日用量未获取：用量接口请求超时')).toBeInTheDocument();
-    expect(screen.getByText('136.460558')).toBeInTheDocument();
+    expect(screen.getByText('136.46')).toBeInTheDocument();
     expect(screen.getByText(/今日使用金额小计（仅成功项）/)).toBeInTheDocument();
     expect(screen.getByText('今日用量：0 个成功，1 个未获取')).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent('1 个今日用量未获取');
@@ -365,8 +365,8 @@ describe('React 页面流程', () => {
     expect(await screen.findByText('2 个成功，1 个失败')).toBeInTheDocument();
     expect(screen.getByText('用量接口请求超时')).toBeInTheDocument();
     expect(screen.getByText(/今日使用金额小计（仅成功项）/)).toBeInTheDocument();
-    expect(screen.getByText('0')).toBeInTheDocument();
-    expect(screen.getAllByText('1.234567')).toHaveLength(2);
+    expect(screen.getByText('0.00')).toBeInTheDocument();
+    expect(screen.getAllByText('1.23')).toHaveLength(2);
     expect(screen.getByLabelText('消耗查询 API Key')).toHaveValue('');
     expect(screen.getByLabelText('消耗查询 API Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
     const saveIndex = fetch.mock.calls.findIndex(([, options]) => options.method === 'PUT');

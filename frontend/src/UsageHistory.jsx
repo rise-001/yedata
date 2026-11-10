@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BarChart3, RefreshCw } from 'lucide-react';
 import { api } from './api.js';
-import { formatTime } from './sites.js';
-
-const amount = (value) => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value);
+import { formatBalance as amount, formatTime } from './sites.js';
 
 export default function UsageHistory() {
   const [data, setData] = useState(null);

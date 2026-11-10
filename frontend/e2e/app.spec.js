@@ -17,7 +17,7 @@ test('七天消耗柱状图在桌面和手机上显示每日金额并支持切�
   await page.goto('/');
   const chart = page.getByRole('region', { name: '最近七天消耗' });
   await expect(chart.getByRole('listitem')).toHaveCount(7);
-  await expect(chart.getByLabel('2026-11-01：0 CNY', { exact: true })).toBeVisible();
+  await expect(chart.getByLabel('2026-11-01：0.00 CNY', { exact: true })).toBeVisible();
   await expect(chart.getByLabel('2026-11-02：未获取，1 项未获取', { exact: true })).toBeVisible();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -29,7 +29,7 @@ test('七天消耗柱状图在桌面和手机上显示每日金额并支持切�
   }
   await chart.getByLabel('消耗统计币种与时区').selectOption('USD|UTC');
   await expect(chart.getByText('七天总消耗', { exact: true })).toBeVisible();
-  await expect(chart.getByLabel('2026-11-01：2 USD', { exact: true })).toBeVisible();
+  await expect(chart.getByLabel('2026-11-01：2.00 USD', { exact: true })).toBeVisible();
 });
 
 const site = {
@@ -140,7 +140,7 @@ for (const siteType of ['sub2', 'newapi']) {
     const cards = result.getByRole('article');
     await expect(cards).toHaveCount(4);
     await page.getByRole('button', { name: '关闭提示' }).click();
-    await expect(cards.nth(3)).toContainText('0.000068');
+    await expect(cards.nth(3).locator('.usage-primary dd')).toHaveText('0.00');
     const columns = await cards.evaluateAll((items) => items.filter((item) => item.offsetTop === items[0].offsetTop).length);
     expect(columns).toBe(siteType === 'sub2' ? 4 : 3);
     await result.screenshot({ path: testInfo.outputPath('multi-key-desktop.png') });
@@ -177,8 +177,8 @@ test('移动端 New API 同时展示今日与累计金额及统计时区', async
   await page.getByRole('button', { name: '消耗查询', exact: true }).click();
   const result = page.getByRole('region', { name: '令牌消耗查询结果' });
   await expect(result).toContainText('gemini 文本');
-  await expect(result).toContainText('今日消耗金额3');
-  await expect(result).toContainText('累计消耗金额136.460558');
+  await expect(result).toContainText('今日消耗金额3.00');
+  await expect(result).toContainText('累计消耗金额136.46');
   await expect(result).toContainText('Asia/Shanghai');
   await expect(page.getByLabel('Key 名称 1')).toHaveValue('gemini 文本');
   await page.reload();
