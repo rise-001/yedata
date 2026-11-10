@@ -24,12 +24,26 @@ test('七天消耗柱状图在桌面和手机上显示每日金额并支持切�
   expect(historyMethods[0]).toBe('GET');
   await expect(chart.getByLabel('2026-11-01：0.00 CNY', { exact: true })).toBeVisible();
   await expect(chart.getByLabel('2026-11-02：未获取，1 项未获取', { exact: true })).toBeVisible();
-  for (const width of [1440, 390]) {
+  for (const width of [1920, 1440, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
     await chart.scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     const bar = chart.locator('.usage-chart-bar').nth(6);
     expect((await bar.boundingBox()).height).toBeGreaterThan(100);
+    const offsets = await chart.getByRole('listitem').evaluateAll((items) => items.map((item) => {
+      const bar = item.querySelector('.usage-chart-bar').getBoundingClientRect();
+      const value = item.querySelector('.usage-chart-value').getBoundingClientRect();
+      const date = item.querySelector('.usage-chart-date');
+      const range = document.createRange();
+      range.selectNode(date.firstChild);
+      const dateText = range.getBoundingClientRect();
+      const center = (rect) => rect.x + rect.width / 2;
+      return { value: Math.abs(center(value) - center(bar)), date: Math.abs(center(dateText) - center(bar)) };
+    }));
+    for (const offset of offsets) {
+      expect(offset.value).toBeLessThan(1);
+      expect(offset.date).toBeLessThan(1);
+    }
     await chart.screenshot({ path: `test-results/usage-history-${width}.png` });
   }
   await chart.getByLabel('消耗统计币种与时区').selectOption('USD|UTC');
