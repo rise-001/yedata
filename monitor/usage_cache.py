@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from django.db import close_old_connections, transaction
 
 from monitor.adapters import get_usage_keys, normalize_site, site_config
-from monitor.time_utils import day_key_of, shift_day_key
+from monitor.time_utils import USAGE_HISTORY_DAYS, day_key_of, shift_day_key
 
 logger = logging.getLogger(__name__)
 _refresh_lock = threading.Lock()
@@ -28,7 +28,7 @@ def usage_fingerprint(site):
 
 def _days(site, now):
     today = day_key_of(site.get('timezone') or 'Asia/Shanghai', now)
-    return [shift_day_key(today, offset) for offset in range(-6, 1)]
+    return [shift_day_key(today, offset) for offset in range(1 - USAGE_HISTORY_DAYS, 1)]
 
 
 def save_usage_points(site, points, now):
@@ -114,10 +114,10 @@ def refresh_usage_history(sites, *, force=False):
 def read_usage_history(sites, now=None):
     from monitor.models import KeyUsageDay
     now = now or datetime.now(timezone.utc)
-    # One indexed query for every site and all seven days.
+    # Include one extra UTC day for sites whose local date is behind UTC.
     rows = {(row.site_id, row.fingerprint, row.day_key): row for row in KeyUsageDay.objects.filter(
         site_id__in=[str(site['id']) for site in sites],
-        day_key__gte=shift_day_key(day_key_of('UTC', now), -7))}
+        day_key__gte=shift_day_key(day_key_of('UTC', now), -USAGE_HISTORY_DAYS))}
     groups = {}
     timestamps = []
     for site in sites:

@@ -3,6 +3,8 @@ Timezone-aware date helpers used by the scheduler and daily report.
 """
 from datetime import datetime, timedelta, timezone
 
+USAGE_HISTORY_DAYS = 8
+
 
 def local_parts(tz_name: str, dt: datetime | None = None) -> dict[str, str]:
     """Return {'year','month','day','hour'} in the given timezone."""

@@ -4,26 +4,26 @@ import { expect, it, vi } from 'vitest';
 import UsageHistory from './UsageHistory.jsx';
 
 const series = [{ currency: 'CNY', timezone: 'Asia/Shanghai', siteCount: 2,
-  days: Array.from({ length: 7 }, (_, index) => ({ date: `2026-11-0${index + 1}`,
+  days: Array.from({ length: 8 }, (_, index) => ({ date: `2026-11-0${index + 1}`,
     cost: index === 2 ? null : index === 0 ? 0 : 2, failedCount: index === 2 || index === 3 ? 1 : 0 })) },
 { currency: 'USD', timezone: 'UTC', siteCount: 1,
-  days: Array.from({ length: 7 }, (_, index) => ({ date: `2026-11-0${index + 1}`, cost: 3, failedCount: 0 })) }];
+  days: Array.from({ length: 8 }, (_, index) => ({ date: `2026-11-0${index + 1}`, cost: 3, failedCount: 0 })) }];
 
-it('展示七天柱形、零消耗、缺失与小计，并可切换币种时区', async () => {
+it('展示八天柱形、零消耗、缺失与小计，并可切换币种时区', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200,
-    json: async () => ({ ok: true, data: { series, queriedAt: '2026-11-07T08:00:00Z' } }) })));
+    json: async () => ({ ok: true, data: { series, queriedAt: '2026-11-08T08:00:00Z' } }) })));
   const user = userEvent.setup();
   render(<UsageHistory />);
   const bars = await screen.findByRole('list', { name: '每日消耗' });
-  expect(within(bars).getAllByRole('listitem')).toHaveLength(7);
+  expect(within(bars).getAllByRole('listitem')).toHaveLength(8);
   expect(within(bars).getByLabelText('2026-11-01：0.00 CNY')).toBeInTheDocument();
   expect(within(bars).getByLabelText('2026-11-03：未获取，1 项未获取')).toBeInTheDocument();
   expect(within(bars).getByLabelText('2026-11-04：2.00 CNY，成功项小计，1 项未获取')).toBeInTheDocument();
   expect(within(bars).getByLabelText(/今日截至查询时刻/)).toBeInTheDocument();
-  expect(screen.getByText('七天消耗小计')).toBeInTheDocument();
+  expect(screen.getByText('八天消耗小计')).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText('消耗统计币种与时区'), 'USD|UTC');
-  expect(screen.getByText('七天总消耗')).toBeInTheDocument();
-  expect(screen.getByText('21.00')).toHaveTextContent('21.00 USD');
+  expect(screen.getByText('八天总消耗')).toBeInTheDocument();
+  expect(screen.getByText('24.00')).toHaveTextContent('24.00 USD');
   expect(within(bars).getByLabelText('2026-11-01：3.00 USD')).toBeInTheDocument();
 });
 
@@ -42,8 +42,8 @@ it('首次及自动同步只读缓存，手动刷新才更新上游，并标明�
   vi.useFakeTimers();
   try {
     const cached = { series: [{ ...series[0], days: series[0].days.map((day) => ({
-      ...day, staleCount: 1, updatedAt: '2026-11-07T07:00:00Z',
-    })) }], queriedAt: '2026-11-07T07:00:00Z', source: 'database' };
+      ...day, staleCount: 1, updatedAt: '2026-11-08T07:00:00Z',
+    })) }], queriedAt: '2026-11-08T07:00:00Z', source: 'database' };
     const fetch = vi.fn(async () => ({ ok: true, status: 200,
       json: async () => ({ ok: true, data: cached }) }));
     vi.stubGlobal('fetch', fetch);
@@ -56,7 +56,7 @@ it('首次及自动同步只读缓存，手动刷新才更新上游，并标明�
     expect(fetch.mock.calls[1][1].method).toBe('GET');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '刷新消耗' })); });
     expect(fetch.mock.calls[2][1].method).toBe('POST');
-    expect(screen.getByText('七天消耗小计')).toBeInTheDocument();
+    expect(screen.getByText('八天消耗小计')).toBeInTheDocument();
   } finally {
     vi.useRealTimers();
   }

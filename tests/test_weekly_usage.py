@@ -25,20 +25,21 @@ class WeeklyUsageTests(unittest.TestCase):
     def test_sub2_fetches_once_per_key_and_keeps_today_separate(self):
         def fetch(url, **kwargs):
             self.assertEqual(parse_qs(urlsplit(url).query),
-                             {'days': ['7'], 'timezone': ['Asia/Shanghai']})
+                             {'days': ['8'], 'timezone': ['Asia/Shanghai']})
             return {'data': {'usage': {'today': {'actual_cost': 2}}, 'daily_usage': [
                 {'date': '2026-10-30', 'actual_cost': 1.5},
                 {'date': '2026-11-04', 'actual_cost': 0},
                 {'date': '2026-11-05', 'actual_cost': 999},
-                {'date': '2026-10-29', 'actual_cost': 999},
+                {'date': '2026-10-29', 'actual_cost': 2.5},
+                {'date': '2026-10-28', 'actual_cost': 999},
             ]}}
         with patch.object(balance, 'fetch_json', side_effect=fetch) as upstream:
             days = balance.get_weekly_key_usage(self.site, self.now)
         self.assertEqual(upstream.call_count, 2)
         self.assertEqual([day['date'] for day in days],
-                         ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02',
+                         ['2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02',
                           '2026-11-03', '2026-11-04', '2026-11-05'])
-        self.assertEqual([day['cost'] for day in days], [3, 0, 0, 0, 0, 0, 4])
+        self.assertEqual([day['cost'] for day in days], [5, 3, 0, 0, 0, 0, 0, 4])
         self.assertTrue(all(day['successCount'] == 2 for day in days))
 
     def test_missing_history_keeps_today_and_timeout_never_becomes_zero(self):
@@ -52,7 +53,7 @@ class WeeklyUsageTests(unittest.TestCase):
         self.assertEqual(days[-1]['cost'], 0)
         self.assertEqual(days[-1]['failedCount'], 1)
 
-    def test_newapi_queries_seven_local_ranges_and_resolves_each_name_once(self):
+    def test_newapi_queries_eight_local_ranges_and_resolves_each_name_once(self):
         ranges = []
         def fetch(url, **kwargs):
             if urlsplit(url).path == '/api/usage/token':
@@ -64,8 +65,10 @@ class WeeklyUsageTests(unittest.TestCase):
             return {'success': True, 'data': {'quota': 625000}}
         with patch.object(balance, 'fetch_json', side_effect=fetch) as upstream:
             days = balance.get_weekly_key_usage({**self.site, 'siteType': 'newapi'}, self.now)
-        self.assertEqual(upstream.call_count, 16)
-        self.assertEqual(len(set(ranges)), 7)
+        self.assertEqual(upstream.call_count, 18)
+        self.assertEqual(len(set(ranges)), 8)
+        self.assertEqual(min(start for start, _ in ranges),
+                         int(datetime(2026, 10, 28, 16, tzinfo=timezone.utc).timestamp()))
         self.assertEqual(max(end for _, end in ranges), int(self.now.timestamp()))
         self.assertTrue(all(day['cost'] == 2.5 for day in days))
         self.assertTrue(all(end - start == 86399 for start, end in ranges if end != int(self.now.timestamp())))

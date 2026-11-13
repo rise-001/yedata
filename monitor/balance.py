@@ -23,7 +23,7 @@ from monitor.adapters import (
 )
 from monitor.storage import save_upstream_sessions, save_daily_usage
 from monitor.report_image import render_daily_report
-from monitor.time_utils import day_key_of, shift_day_key, local_parts
+from monitor.time_utils import USAGE_HISTORY_DAYS, day_key_of, shift_day_key, local_parts
 
 logger = logging.getLogger(__name__)
 
@@ -244,10 +244,10 @@ def _sub2_daily_cost(raw: dict, usage_day: str) -> float:
 
 
 def get_weekly_key_usage(site: dict, queried_at: datetime, *, requested_days: list[str] | None = None) -> list[dict]:
-    """Read seven calendar days, including today, without cumulative snapshots."""
+    """Read eight calendar days, including today, without cumulative snapshots."""
     cfg = site_config(site)
     today = day_key_of(cfg.get('timezone') or 'Asia/Shanghai', queried_at)
-    days = [shift_day_key(today, offset) for offset in range(-6, 1)]
+    days = [shift_day_key(today, offset) for offset in range(1 - USAGE_HISTORY_DAYS, 1)]
     if requested_days is not None:
         days = [day for day in days if day in requested_days]
     if not days:
@@ -265,7 +265,7 @@ def get_weekly_key_usage(site: dict, queried_at: datetime, *, requested_days: li
     def load_key(key):
         try:
             if is_sub2_site(cfg):
-                params = urlencode({'days': 7, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
+                params = urlencode({'days': USAGE_HISTORY_DAYS, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
                 raw = fetch_json(url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
                                  headers={'Authorization': f'Bearer {key["token"]}'}, timeout=20)
                 return {'raw': raw}

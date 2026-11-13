@@ -55,15 +55,15 @@ export default function UsageHistory() {
 
   return <section className="overview-panel usage-history" aria-labelledby="usage-history-title" aria-busy={loading}>
     <header className="overview-panel-header">
-      <div className="overview-panel-title"><span className="panel-symbol"><BarChart3 size={20} aria-hidden="true" /></span><div><h2 id="usage-history-title">最近七天消耗</h2><p>按天汇总已启用站点的 API Key 消耗，含今天</p></div></div>
+      <div className="overview-panel-title"><span className="panel-symbol"><BarChart3 size={20} aria-hidden="true" /></span><div><h2 id="usage-history-title">最近八天消耗</h2><p>按天汇总已启用站点的 API Key 消耗，含今天</p></div></div>
       <div className="usage-history-actions">
         {series.length > 1 && <select aria-label="消耗统计币种与时区" value={groupKey(group)} onChange={(event) => setSelection(event.target.value)}>{series.map((item) => <option key={groupKey(item)} value={groupKey(item)}>{item.currency} · {item.timezone}</option>)}</select>}
         <button className="secondary-button" disabled={loading} onClick={() => setRevision((value) => value + 1)}><RefreshCw size={14} aria-hidden="true" />{loading ? '查询中…' : '刷新消耗'}</button>
       </div>
     </header>
-    {error && <div className="notice error-notice" role="alert">七天消耗查询失败：{error}<button className="text-button" onClick={() => setRevision((value) => value + 1)}>重新查询</button></div>}
-    {!group ? <div className="usage-history-empty" role="status">{loading ? '正在查询最近七天的消耗…' : error ? '暂时无法获取消耗数据' : '启用站点并配置消耗查询 API Key 后，可查看每日消耗'}</div> : <>
-      <div className="usage-history-summary"><div><span>{partial ? '七天消耗小计' : '七天总消耗'}</span><strong>{values.length ? amount(total) : '—'} <small>{group.currency}</small></strong></div><p>{days[0]?.date} 至 {days.at(-1)?.date}<br />{group.timezone} · {group.siteCount} 个启用站点</p></div>
+    {error && <div className="notice error-notice" role="alert">八天消耗查询失败：{error}<button className="text-button" onClick={() => setRevision((value) => value + 1)}>重新查询</button></div>}
+    {!group ? <div className="usage-history-empty" role="status">{loading ? '正在查询最近八天的消耗…' : error ? '暂时无法获取消耗数据' : '启用站点并配置消耗查询 API Key 后，可查看每日消耗'}</div> : <>
+      <div className="usage-history-summary"><div><span>{partial ? '八天消耗小计' : '八天总消耗'}</span><strong>{values.length ? amount(total) : '—'} <small>{group.currency}</small></strong></div><p>{days[0]?.date} 至 {days.at(-1)?.date}<br />{group.timezone} · {group.siteCount} 个启用站点</p></div>
       <div className="usage-chart-scroll"><div className="usage-chart">
         <div className="usage-chart-axis" aria-hidden="true">{[upper, (upper + lower) / 2, lower].map((value, index) => <span key={index}>{amount(value)}</span>)}</div>
         <div className="usage-chart-plot"><div className="usage-chart-grid" aria-hidden="true"><i /><i /><i /></div><div className="usage-chart-zero" style={{ bottom: `calc(30px + ${baseline}% - ${baseline * 0.3}px)` }} aria-hidden="true" />

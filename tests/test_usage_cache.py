@@ -35,18 +35,18 @@ def query(site, queried_at, requested_days=None):
     from monitor.time_utils import day_key_of, shift_day_key
     today = day_key_of(site['timezone'], queried_at)
     return [{'date': shift_day_key(today, offset), 'cost': 1.234567,
-             'successCount': 2, 'failedCount': 0} for offset in range(-6, 1)
+             'successCount': 2, 'failedCount': 0} for offset in range(-7, 1)
             if requested_days is None or shift_day_key(today, offset) in requested_days]
 
 with patch.object(balance, 'get_weekly_key_usage', side_effect=query) as upstream:
-    # An empty cache still returns all seven dates without an upstream request.
+    # An empty cache still returns all eight dates without an upstream request.
     empty = read_usage_history([site], now)
-    assert len(empty['series'][0]['days']) == 7
+    assert len(empty['series'][0]['days']) == 8
     assert all(day['cost'] is None for day in empty['series'][0]['days'])
     upstream.assert_not_called()
     refresh_site_usage(site, now=now)
-    assert len(upstream.call_args.kwargs['requested_days']) == 7
-    assert KeyUsageDay.objects.count() == 7
+    assert len(upstream.call_args.kwargs['requested_days']) == 8
+    assert KeyUsageDay.objects.count() == 8
     with CaptureQueriesContext(connection) as queries:
         cached = read_usage_history([site], now)
     assert len(queries) == 1
@@ -63,8 +63,8 @@ with patch.object(balance, 'get_weekly_key_usage', side_effect=query) as upstrea
     refresh_site_usage(site, now=now + timedelta(hours=1, seconds=1))
     assert upstream.call_args.kwargs['requested_days'] == ['2026-11-04', '2026-11-05']
     refresh_site_usage(site, force=True, now=now + timedelta(hours=1, seconds=2))
-    assert len(upstream.call_args.kwargs['requested_days']) == 7
-    # Missing data after midnight needs a fresh date; six cached days survive.
+    assert len(upstream.call_args.kwargs['requested_days']) == 8
+    # Missing data after midnight needs a fresh date; seven cached days survive.
     refresh_site_usage(site, now=now + timedelta(days=1))
     assert upstream.call_args.kwargs['requested_days'] == ['2026-11-05', '2026-11-06']
     # Even after a multi-day outage, a saved partial calendar day is finalized.
@@ -111,6 +111,14 @@ groups = read_usage_history([site, beta, usd, utc], failed_at)['series']
 assert len(groups) == 3 and groups[0]['siteCount'] == 2
 assert groups[0]['days'][-1]['cost'] == 1.234567
 assert 'sk-' not in str(groups)
+# The oldest of eight local days must survive the UTC database cutoff, even
+# when a western timezone is still on the previous calendar date.
+west = {**site, 'id': 'west', 'timezone': 'America/Los_Angeles'}
+with patch.object(balance, 'get_weekly_key_usage', side_effect=query):
+    refresh_site_usage(west, now=failed_at)
+west_days = read_usage_history([west], failed_at)['series'][0]['days']
+assert len(west_days) == 8 and west_days[0]['date'] == '2026-10-29'
+assert all(day['cost'] == 1.234567 for day in west_days)
 # Exercise threaded POST refresh followed by database GET, with real SQLite.
 import time
 from django.test import Client
@@ -125,7 +133,7 @@ with patch.object(state, 'saved_sites', [site, beta]), patch.dict(
     assert refreshed.status_code == 200, refreshed.content
     assert upstream.call_count == 2
     assert refreshed.json()['data']['source'] == 'database'
-    assert len(refreshed.json()['data']['series'][0]['days']) == 7
+    assert len(refreshed.json()['data']['series'][0]['days']) == 8
     upstream.reset_mock()
     assert client.get('/api/usage/history').json()['data'] == refreshed.json()['data']
     upstream.assert_not_called()
