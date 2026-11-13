@@ -1,4 +1,63 @@
 :root { font-family: 'DM Sans', 'Noto Sans SC', system-ui, sans-serif; color: #203b33; background: #f4f7f4; font-synthesis: none; --green: #176c59; --dark: #123c34; --muted: #7c8d85; --line: #e0e8e1; --mint: #e8f3ec; }
+.reconciliation { min-width: 0; }
+.reconcile-intro { max-width: 850px; color: #637b6f; font-size: 13px; line-height: 1.9; }
+.reconcile-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin: 24px 0; }
+.reconcile-stats > div { min-width: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+.reconcile-stats span { display: block; color: #637b6f; font-size: 12px; }
+.reconcile-stats strong { display: block; font-size: 27px; font-weight: 600; margin: 15px 0 10px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.reconcile-stats strong small { font-size: 11px; }
+.reconcile-stats > div > small { font-size: 10px; }
+.reconcile-panel, .reconcile-detail { min-width: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+.reconcile-toolbar, .reconcile-detail > header, .reconcile-pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.reconcile-toolbar h2, .reconcile-detail h2 { margin: 0 0 6px; font-size: 17px; }
+.reconcile-toolbar small, .reconcile-detail > header small { font-size: 11px; }
+.reconcile-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin: 22px 0; }
+.reconciliation label { display: grid; gap: 8px; min-width: 0; font-size: 11px; color: #637b6f; }
+.reconciliation input, .reconciliation select, .reconciliation textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: #fff; padding: 10px; color: var(--dark); font-size: 12px; }
+.reconciliation textarea { resize: vertical; }
+.reconcile-table-scroll { overflow-x: auto; }
+.reconcile-table { display: table; width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; white-space: nowrap; }
+.reconcile-table thead { display: table-header-group; }
+.reconcile-table tbody { display: table-row-group; white-space: nowrap; }
+.reconcile-table tr { display: table-row; border: 0; border-radius: 0; overflow: visible; }
+.reconcile-table th { font-size: 10px; font-weight: 500; color: #637b6f; background: #f5f8f4; padding: 13px 12px; }
+.reconcile-table td { display: table-cell; padding: 17px 12px; border-bottom: 1px solid #edf1eb; font-variant-numeric: tabular-nums; background: transparent; }
+.reconcile-table td::before { display: none; }
+.reconcile-table td:first-child { max-width: 200px; white-space: normal; overflow-wrap: anywhere; }
+.reconcile-table td small { display: block; font-size: 10px; margin-top: 6px; }
+.reconcile-badge { display: inline-block; border-radius: 5px; padding: 5px 8px; font-size: 10px; color: #637b6f; background: #f0f3ef; white-space: nowrap; }
+.reconcile-badge.recharge { color: #176c59; background: #e5f5eb; }
+.reconcile-badge.anomaly { color: #a44336; background: #fceee8; }
+.reconcile-badge.pending { color: #95631b; background: #fff4dd; }
+.reconcile-badge.normal, .reconcile-badge.recovered { color: #477652; background: #edf5e9; }
+.reconcile-badge.unavailable { color: #875f42; background: #f6eee5; }
+.reconcile-pagination { padding-top: 20px; }
+.reconcile-pagination > div { display: flex; gap: 10px; }
+.reconcile-detail { margin: 20px 0; background: #fbfdf9; }
+.reconcile-detail-heading { display: flex; align-items: center; gap: 12px; margin: 20px 0 12px; font-size: 12px; }
+.reconcile-detail p { font-size: 12px; line-height: 1.8; }
+.reconcile-formula { display: grid; gap: 10px; padding: 16px; margin: 18px 0; background: #ecf4e8; border-radius: 8px; }
+.reconcile-formula strong { font-size: 17px; line-height: 1.8; overflow-wrap: anywhere; }
+.reconcile-formula small { font-size: 11px; }
+.reconcile-evidence { margin: 20px 0; font-size: 12px; }
+.reconcile-evidence summary { cursor: pointer; }
+.reconcile-evidence dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+.reconcile-evidence dt { color: #637b6f; font-size: 11px; }
+.reconcile-evidence dd { margin: 7px 0; overflow-wrap: anywhere; }
+.reconcile-note { display: grid; gap: 13px; margin-top: 20px; }
+.reconcile-note > div { display: flex; align-items: center; gap: 15px; font-size: 12px; }
+.reconcile-bottom, .reconcile-hint { color: #637b6f; font-size: 11px; line-height: 1.9; }
+.reconcile-bottom { margin-top: 18px; }
+@media (max-width: 1150px) { .reconcile-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .reconcile-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .reconcile-panel, .reconcile-detail { padding: 13px; }
+  .reconcile-stats { gap: 9px; }
+  .reconcile-stats > div { padding: 15px 12px; }
+  .reconcile-stats strong { font-size: 22px; }
+  .reconcile-toolbar { flex-wrap: wrap; }
+  .reconcile-evidence dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .reconcile-pagination { flex-wrap: wrap; }
+}
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input, select, textarea { font: inherit; }
@@ -202,7 +261,7 @@ td small { font-size: 9px; }
 }
 @media (max-width: 760px) {
   .app-shell { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; padding: 17px 19px; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+  .sidebar { width: 100%; height: auto; position: static; padding: 17px 19px; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
   .brand { font-size: 15px; gap: 9px; }
   .brand-mark { width: 31px; height: 31px; font-size: 20px; border-radius: 8px; }
   .brand small { font-size: 6px; letter-spacing: 1px; }

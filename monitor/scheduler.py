@@ -95,6 +95,12 @@ def start():
     def tick():
         now = time.time()
         concurrency = settings.CHECK_CONCURRENCY
+        from monitor.reconciliation import pending_site_ids
+        try:
+            pending = pending_site_ids()
+        except Exception:
+            logger.exception('Failed to read pending reconciliation reviews')
+            pending = set()
 
         # Per-site scheduled checks.
         running_count = len(state.scheduled_running)
@@ -107,6 +113,8 @@ def start():
             if running_count >= concurrency:
                 break
             interval = normalize_site(site).get('intervalSeconds', 300)
+            if sid in pending:
+                interval = min(interval, 60)
             last = state.scheduled_last_run.get(sid, 0)
             if now - last >= interval:
                 _run_site(site, sid)
@@ -135,8 +143,9 @@ def start():
         state.scheduled_last_run[sid] = time.time()
         try:
             from monitor.balance import check_and_notify, record_daily_usage
+            from monitor.reconciliation import collect_check
             full_site = with_saved_secrets(site, state.saved_sites)
-            result = check_and_notify(full_site)
+            result = collect_check(full_site, check_and_notify)
             record_daily_usage(full_site, result)
             state.scheduled_results[sid] = {**result, 'ok': True,
                                              'checkedAt': _now_iso()}

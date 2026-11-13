@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, LayoutDashboard, LogOut, Plus, RefreshCw, ScanLine, Settings, X } from 'lucide-react';
+import { ArrowRight, LayoutDashboard, LogOut, Plus, RefreshCw, Scale, ScanLine, Settings, X } from 'lucide-react';
 import { api, send } from './api.js';
 import { Brand, Dashboard, Field, SiteCard } from './components.jsx';
 import { formatTime, hydrateSite, mergeResults, newSite, serializeSite, validateSites } from './sites.js';
+import Reconciliation from './Reconciliation.jsx';
+
+const currentView = () => ['#sites', '#reconciliation'].includes(location.hash) ? location.hash.slice(1) : 'dashboard';
 
 function Login({ onLogin, expired }) {
   const [username, setUsername] = useState('admin');
@@ -26,7 +29,7 @@ function Login({ onLogin, expired }) {
 }
 
 function Workspace({ onLogout }) {
-  const [view, setView] = useState(location.hash === '#sites' ? 'sites' : 'dashboard');
+  const [view, setView] = useState(currentView);
   const [sites, setSites] = useState([]);
   const [results, setResults] = useState({});
   const [usageResults, setUsageResults] = useState({});
@@ -83,7 +86,7 @@ function Workspace({ onLogout }) {
   }, [refresh]);
 
   useEffect(() => {
-    const onHash = () => setView(location.hash === '#sites' ? 'sites' : 'dashboard');
+    const onHash = () => setView(currentView());
     const onUnload = (event) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } };
     window.addEventListener('hashchange', onHash);
     window.addEventListener('beforeunload', onUnload);
@@ -236,13 +239,15 @@ function Workspace({ onLogout }) {
 
   return <div className={`app-shell ${view === 'dashboard' ? 'dashboard-shell' : ''}`}><aside className="sidebar"><Brand /><span className="side-label">工作区</span><nav aria-label="主导航">
     <a href="/#dashboard" className={view === 'dashboard' ? 'nav-item active' : 'nav-item'} aria-current={view === 'dashboard' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('dashboard'); }}><LayoutDashboard size={17} aria-hidden="true" />数据概览</a>
+    <a href="/#reconciliation" className={view === 'reconciliation' ? 'nav-item active' : 'nav-item'} aria-current={view === 'reconciliation' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('reconciliation'); }}><Scale size={17} aria-hidden="true" />数据差异分析</a>
     <a href="/#sites" className={view === 'sites' ? 'nav-item active' : 'nav-item'} aria-current={view === 'sites' ? 'page' : undefined} onClick={(event) => { event.preventDefault(); navigate('sites'); }}><Settings size={17} aria-hidden="true" />站点设置</a>
     </nav><div className="sidebar-footer"><i className="online-dot" /><div>后台持续监控<small>凭据仅保存在服务端</small></div></div></aside>
-    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{view === 'dashboard' ? 'DATA OVERVIEW' : 'MULTI-SITE DATA CENTER'}</span><h1>{view === 'dashboard' ? '数据概览' : '站点设置'}</h1>{view === 'dashboard' && <p className="overview-intro">余额、消耗与站点状态，尽在掌握。</p>}</div><div className="top-actions"><small className="last-sync">{view === 'dashboard' && <span>最近检查</span>}{formatTime(latest)}</small><button className="text-button" disabled={Boolean(busy)} onClick={logout}><LogOut size={14} aria-hidden="true" />退出</button><button className="icon-button" title="刷新站点数据" aria-label="刷新站点数据" disabled={!loaded || Boolean(busy)} onClick={() => view === 'sites' ? check() : refresh()}><RefreshCw size={17} aria-hidden="true" /></button></div></header>
+    <main className="main-content"><header className="topbar"><div><span className="eyebrow">{view === 'dashboard' ? 'DATA OVERVIEW' : view === 'reconciliation' ? 'BALANCE RECONCILIATION' : 'MULTI-SITE DATA CENTER'}</span><h1>{view === 'dashboard' ? '数据概览' : view === 'reconciliation' ? '数据差异分析' : '站点设置'}</h1>{view === 'dashboard' && <p className="overview-intro">余额、消耗与站点状态，尽在掌握。</p>}</div><div className="top-actions"><small className="last-sync">{view === 'dashboard' && <span>最近检查</span>}{formatTime(latest)}</small><button className="text-button" disabled={Boolean(busy)} onClick={logout}><LogOut size={14} aria-hidden="true" />退出</button>{view !== 'reconciliation' && <button className="icon-button" title="刷新站点数据" aria-label="刷新站点数据" disabled={!loaded || Boolean(busy)} onClick={() => view === 'sites' ? check() : refresh()}><RefreshCw size={17} aria-hidden="true" /></button>}</div></header>
       {syncError && <div className="notice error-notice" role="status">暂时无法同步检查结果，将自动重试。<button className="text-button" onClick={refresh}>立即重试</button></div>}
       {dirty && <div className="notice" role="status">配置有修改，请保存以应用到后台监控。<button className="text-button" disabled={Boolean(busy)} onClick={() => run('save', async () => { await save(); notify('配置已保存，后台监控已生效'); })}>保存配置</button></div>}
       {!loaded ? <div className="empty-state" role="status">{loadError ? <><p className="error-text">{loadError}</p><button className="secondary-button" onClick={() => setRetry((value) => value + 1)}>重新加载</button></> : '正在加载站点配置…'}</div>
         : view === 'dashboard' ? <Dashboard sites={sites} results={results} checkingIds={checkingIds} onEdit={edit} onOpen={open} onAdd={add} />
+          : view === 'reconciliation' ? <Reconciliation sites={sites} />
           : <><section className="section-toolbar"><div><span className="section-index">设置</span><h2>监控站点</h2><small>{dirty ? '有未保存的修改' : '配置已同步'}</small></div><div className="toolbar-actions">
             <button className="secondary-button" disabled={Boolean(busy)} onClick={add}><Plus size={15} aria-hidden="true" />添加站点</button>
             <button className="secondary-button" disabled={Boolean(busy)} onClick={() => run('save', async () => { await save(); notify('配置已保存，后台监控已生效'); })}>{busy === 'save' ? '保存中…' : '保存配置'}</button>

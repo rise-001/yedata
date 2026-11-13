@@ -173,3 +173,53 @@ class KeyUsageDay(models.Model):
         app_label = 'monitor'
         constraints = [models.UniqueConstraint(
             fields=['site_id', 'fingerprint', 'day_key'], name='unique_key_usage_day')]
+
+
+class ReconciliationSnapshot(models.Model):
+    """Immutable paired observations; evidence contains amounts, never credentials."""
+    site_id = models.CharField(max_length=64)
+    site_name = models.CharField(max_length=80)
+    fingerprint = models.CharField(max_length=64)
+    started_at = models.DateTimeField()
+    captured_at = models.DateTimeField()
+    currency = models.CharField(max_length=8)
+    scope = models.CharField(max_length=24)
+    day_key = models.CharField(max_length=10, blank=True)
+    balance = models.DecimalField(max_digits=28, decimal_places=10, null=True)
+    consumption = models.DecimalField(max_digits=28, decimal_places=10, null=True)
+    complete = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)
+    evidence = models.JSONField(default=dict)
+
+    class Meta:
+        indexes = [models.Index(fields=['site_id', '-captured_at'], name='reconcile_snapshot_site_time')]
+
+
+class ReconciliationEvent(models.Model):
+    site_id = models.CharField(max_length=64)
+    baseline = models.ForeignKey(ReconciliationSnapshot, null=True, on_delete=models.PROTECT, related_name='+')
+    first_snapshot = models.ForeignKey(ReconciliationSnapshot, on_delete=models.PROTECT, related_name='+')
+    latest_snapshot = models.ForeignKey(ReconciliationSnapshot, on_delete=models.PROTECT, related_name='+')
+    status = models.CharField(max_length=24)
+    interval_usage = models.DecimalField(max_digits=28, decimal_places=10, null=True)
+    difference = models.DecimalField(max_digits=28, decimal_places=10, null=True)
+    tolerance = models.DecimalField(max_digits=28, decimal_places=10, default='0.01')
+    reason = models.TextField(blank=True)
+    evidence = models.JSONField(default=dict)
+    note = models.TextField(blank=True)
+    resolution = models.CharField(max_length=24, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    stable_since = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=['site_id', '-updated_at'], name='reconcile_event_site_time'),
+                   models.Index(fields=['status', '-updated_at'], name='reconcile_event_status_time')]
+
+
+class ReconciliationState(models.Model):
+    site_id = models.CharField(max_length=64, unique=True)
+    fingerprint = models.CharField(max_length=64, blank=True)
+    baseline = models.ForeignKey(ReconciliationSnapshot, null=True, on_delete=models.PROTECT, related_name='+')
+    pending = models.ForeignKey(ReconciliationEvent, null=True, on_delete=models.PROTECT, related_name='+')
+    latest_snapshot = models.ForeignKey(ReconciliationSnapshot, null=True, on_delete=models.PROTECT, related_name='+')

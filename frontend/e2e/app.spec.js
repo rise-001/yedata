@@ -1,5 +1,41 @@
 import { expect, test } from '@playwright/test';
 
+test('差异分析支持导航、计算详情、备注及手机布局', async ({ page }) => {
+  await mockApi(page);
+  const row = { id: 7, siteId: 'alpha', siteName: 'Alpha', status: 'anomaly', scope: 'keys', currency: 'CNY',
+    fromTime: '2026-11-13T00:00:00Z', toTime: '2026-11-13T00:05:00Z', previousBalance: '100',
+    balance: '70', intervalUsage: '10', difference: '-20', note: '', resolution: '', reason: '仅覆盖已配置 Key' };
+  const snapshot = { id: 1, startedAt: row.fromTime, capturedAt: row.fromTime, balance: '100', consumption: '10',
+    complete: true, scope: 'keys', day: '2026-11-13', evidence: { rawBalance: '100', divisor: '1', multiplier: '1', timezone: 'Asia/Shanghai' } };
+  let note;
+  await page.route('**/api/reconciliation**', async (route) => {
+    const detail = new URL(route.request().url()).pathname.endsWith('/7');
+    if (route.request().method() === 'PATCH') note = route.request().postDataJSON();
+    const data = detail ? { ...row, ...note, baseline: snapshot, first: { ...snapshot, id: 2 }, latest: { ...snapshot, id: 3 }, evidence: {}, tolerance: '0.01', reviewSeconds: 60 }
+      : { records: [row], count: 1, page: 1, pageSize: 50, totals: [{ currency: 'CNY', recharge: '500', anomaly: '20' }], pendingCount: 0, unavailableSiteCount: 1 };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, data }) });
+  });
+  await page.goto('/');
+  await page.getByRole('link', { name: '数据差异分析' }).click();
+  await expect(page.getByRole('heading', { name: '数据差异分析', exact: true })).toBeVisible();
+  await expect(page.getByText('未解释扣减', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '查看Alpha记录 7' }).click();
+  await expect(page.getByText('70.00 − 100.00 ＋ 10.00 = -20.00 CNY')).toBeVisible();
+  await page.getByLabel('处理标记').selectOption('contacted');
+  await page.getByLabel('核实备注').fill('已联系站方核实');
+  await page.getByRole('button', { name: '保存备注' }).click();
+  await expect(page.getByText('备注已保存')).toBeVisible();
+  expect(note).toEqual({ resolution: 'contacted', note: '已联系站方核实' });
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.getByRole('heading', { name: '数据差异分析', exact: true }).scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/reconciliation-${width}.png`, fullPage: true });
+  }
+  await page.reload();
+  await expect(page.getByRole('heading', { name: '数据差异分析', exact: true })).toBeVisible();
+});
+
 test('七天消耗柱状图在桌面和手机上显示每日金额并支持切换币种', async ({ page }) => {
   await mockApi(page);
   const historyMethods = [];

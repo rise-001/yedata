@@ -9,6 +9,8 @@ urlpatterns = [
     path('api/check',         views.api_check),
     path('api/usage/token',   views.api_token_usage),
     path('api/usage/history', views.api_usage_history),
+    path('api/reconciliation', views.api_reconciliation),
+    path('api/reconciliation/<int:event_id>', views.api_reconciliation_detail),
     path('api/check-many',    views.api_check_many),
     path('api/notify-test',   views.api_notify_test),
     path('api/scheduler',     views.api_scheduler),

@@ -664,8 +664,19 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         elif isinstance(profile.get('quota'), (int, float)):
             balance_field = 'quota'
 
-    raw_balance = _value_at_path(profile, balance_field) or _value_at_path(me_data, balance_field)
-    raw_balance = float(raw_balance or 0)
+    raw_balance = _value_at_path(profile, balance_field)
+    if raw_balance is None:
+        raw_balance = _value_at_path(me_data, balance_field)
+    original_balance = raw_balance
+    try:
+        if raw_balance is None or isinstance(raw_balance, bool):
+            raise ValueError()
+        raw_balance = float(raw_balance)
+        if not isfinite(raw_balance):
+            raise ValueError()
+    except (TypeError, ValueError):
+        raise ValueError('余额接口响应中没有有效的余额字段')
+    balance_captured_at = datetime.now(dt_timezone.utc)
 
     configured_divisor = cfg.get('balanceDivisor')
     try:
@@ -737,6 +748,12 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
                         profile.get('email') or '账户'),
         'status': profile.get('status') or '',
         'updatedAt': datetime.now(dt_timezone.utc).isoformat(),
+        'accounting': {
+            'balance': str(original_balance),
+            'usedQuota': str(profile['used_quota']) if profile.get('used_quota') is not None else None,
+            'frozen': str(profile.get('frozen_balance') or 0),
+            'balanceCapturedAt': balance_captured_at.isoformat(),
+        },
         'raw': {
             'id': profile.get('id'),
             'concurrency': profile.get('concurrency'),

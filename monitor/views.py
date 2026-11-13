@@ -24,6 +24,7 @@ from monitor.balance import check_and_notify, get_token_usage, record_daily_usag
 from monitor.report_image import render_daily_report
 from monitor.usage_cache import read_usage_history, refresh_usage_history, save_today_usage
 from monitor.storage import load_daily_report_webhook, save_sites, save_upstream_sessions
+from monitor.reconciliation import collect_check
 
 logger = logging.getLogger(__name__)
 
@@ -220,7 +221,7 @@ def api_check(request: HttpRequest) -> HttpResponse:
         if body.get('enabled') is False:
             return _err('该站点已停用，请先启用后再检查')
         site = with_saved_secrets(body, state.saved_sites)
-        result = check_and_notify(site)
+        result = collect_check(site, check_and_notify)
         return _json({'ok': True, 'data': result})
     except (ValueError, Exception) as exc:
         status = getattr(exc, 'status', 400)
@@ -295,7 +296,7 @@ def api_check_many(request: HttpRequest) -> HttpResponse:
     for site_input in enabled:
         site = with_saved_secrets(site_input, state.saved_sites)
         try:
-            r = check_and_notify(site)
+            r = collect_check(site, check_and_notify)
             result = {**r, 'siteId': site.get('id'), 'siteName': site.get('name') or site.get('baseUrl'), 'ok': True, 'checkedAt': now_iso}
         except Exception as exc:
             result = {'siteId': site.get('id'), 'siteName': site.get('name') or site.get('baseUrl'), 'ok': False, 'message': str(exc), 'checkedAt': now_iso}
@@ -313,6 +314,72 @@ def api_check_many(request: HttpRequest) -> HttpResponse:
         results.append(result)
 
     return _json({'ok': True, 'data': results})
+
+
+@csrf_exempt
+def api_reconciliation(request: HttpRequest) -> HttpResponse:
+    if not _require_session(request):
+        return _err('请先登录管理后台', 401)
+    from monitor.reconciliation import read_history, reset_baseline
+    try:
+        if request.method == 'POST':
+            body = _read_body(request)
+            site_id = str(body.get('siteId') or '')
+            sites = [dict(s) for s in state.saved_sites if s.get('enabled', True)
+                     and (not site_id or str(s['id']) == site_id)]
+            if not sites:
+                return _err('没有匹配的已启用站点', 404)
+            action = body.get('action')
+            if action == 'reset' and site_id:
+                reset_baseline(site_id)
+            elif action == 'check':
+                failures = 0
+                for site in sites:
+                    try:
+                        result = collect_check(site, check_and_notify)
+                        if result.get('reconciliationError'):
+                            failures += 1
+                        state.scheduled_results[str(site['id'])] = {
+                            **result, 'ok': True, 'checkedAt': datetime.now(timezone.utc).isoformat()}
+                    except Exception:
+                        failures += 1
+                return _json({'ok': True, 'data': {'checked': len(sites), 'failed': failures}})
+            else:
+                return _err('无效的差异分析操作')
+            return _json({'ok': True})
+        if request.method != 'GET':
+            return _err('Method not allowed', 405)
+        return _json({'ok': True, 'data': read_history(request.GET)})
+    except ValueError as exc:
+        return _err(str(exc))
+    except Exception:
+        logger.exception('Reconciliation storage failed')
+        return _err('差异分析数据暂时不可用，请稍后重试', 503)
+
+
+@csrf_exempt
+def api_reconciliation_detail(request: HttpRequest, event_id: int) -> HttpResponse:
+    if not _require_session(request):
+        return _err('请先登录管理后台', 401)
+    if request.method not in ('GET', 'PATCH'):
+        return _err('Method not allowed', 405)
+    from monitor.models import ReconciliationEvent
+    from monitor.reconciliation import RESOLUTIONS, serialize_event
+    try:
+        row = ReconciliationEvent.objects.select_related('baseline', 'first_snapshot', 'latest_snapshot').get(pk=event_id)
+        if request.method == 'PATCH':
+            body = _read_body(request)
+            note, resolution = body.get('note', ''), body.get('resolution', '')
+            if not isinstance(note, str) or len(note) > 2000 or resolution not in RESOLUTIONS:
+                return _err('备注最多 2000 字，请选择有效的处理状态')
+            # Updating notes must never overwrite a concurrent review's amounts/status.
+            ReconciliationEvent.objects.filter(pk=row.pk).update(note=note, resolution=resolution)
+            row.refresh_from_db()
+        return _json({'ok': True, 'data': serialize_event(row, detail=True)})
+    except ReconciliationEvent.DoesNotExist:
+        return _err('记录不存在', 404)
+    except (ValueError, TypeError):
+        return _err('请求数据无效')
 
 
 @csrf_exempt
