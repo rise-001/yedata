@@ -32,6 +32,8 @@ function Workspace({ onLogout }) {
   const [usageResults, setUsageResults] = useState({});
   const [webhook, setWebhook] = useState('');
   const [hasWebhook, setHasWebhook] = useState(false);
+  const [dailyReportWebhook, setDailyReportWebhook] = useState('');
+  const [hasDailyReportWebhook, setHasDailyReportWebhook] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [syncError, setSyncError] = useState(false);
@@ -56,6 +58,7 @@ function Workspace({ onLogout }) {
       setSites(data.sites.map(hydrateSite));
       setResults(data.results);
       setHasWebhook(Boolean(data.settings.hasWebhook));
+      setHasDailyReportWebhook(Boolean(data.settings.hasDailyReportWebhook));
       setLoaded(true);
     }).catch((error) => { if (!controller.signal.aborted) setLoadError(error.message); });
     return () => controller.abort();
@@ -140,9 +143,10 @@ function Workspace({ onLogout }) {
   async function save(nextSites = sites) {
     const payload = nextSites.map(serializeSite);
     validateSites(payload);
-    const { data } = await send('sites', 'PUT', { sites: payload, settings: { webhook: webhook.trim() } });
+    const { data } = await send('sites', 'PUT', { sites: payload, settings: { webhook: webhook.trim(), dailyReportWebhook: dailyReportWebhook.trim() } });
     const saved = data.sites.map(hydrateSite);
     setSites(saved); setWebhook(''); setHasWebhook(Boolean(data.settings.hasWebhook)); setDirty(false);
+    setDailyReportWebhook(''); setHasDailyReportWebhook(Boolean(data.settings.hasDailyReportWebhook));
     return saved;
   }
 
@@ -176,9 +180,17 @@ function Workspace({ onLogout }) {
     });
   }
 
-  function testNotification() {
-    if (!webhook.trim() && !hasWebhook) return notify('请先填写企业微信 Webhook', true);
-    run('notify', async () => { await send('notify-test', 'POST', { webhook: webhook.trim() }); notify('测试通知已发送'); });
+  function testNotification(target = 'alert') {
+    const dailyReport = target === 'dailyReport';
+    const value = (dailyReport ? dailyReportWebhook : webhook).trim();
+    const saved = dailyReport ? hasDailyReportWebhook : hasWebhook;
+    if (!value && !saved) return notify(dailyReport ? '请先填写晨报企业微信 Webhook' : '请先填写企业微信 Webhook', true);
+    run(dailyReport ? 'notify-report' : 'notify', async () => {
+      await send('notify-test', 'POST', { webhook: value, ...(dailyReport ? { target } : {}) });
+      if (dailyReport) { setDailyReportWebhook(''); setHasDailyReportWebhook(true); }
+      else { setWebhook(''); setHasWebhook(true); }
+      notify(dailyReport ? '晨报测试通知已发送' : '测试通知已发送');
+    });
   }
 
   function queryTokenUsage(site) {
@@ -236,7 +248,8 @@ function Workspace({ onLogout }) {
             <button className="secondary-button" disabled={Boolean(busy)} onClick={() => run('save', async () => { await save(); notify('配置已保存，后台监控已生效'); })}>{busy === 'save' ? '保存中…' : '保存配置'}</button>
             <button className="primary-button" disabled={Boolean(busy)} onClick={() => check()}><ScanLine size={15} aria-hidden="true" />{busy === 'check' ? '检查中…' : '检查全部'}</button>
           </div></section>
-          <section className="notification-panel"><div><h3>企业微信通知</h3><p>所有站点共用此 Webhook，预警可按站点独立设置。</p></div><fieldset disabled={Boolean(busy)}><Field label="全局 Webhook" value={webhook} onChange={(value) => { setWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={testNotification}>{busy === 'notify' ? '发送中…' : '测试通知'}</button></section>
+          <section className="notification-panel"><div><h3>余额预警 · 企业微信通知</h3><p>所有站点共用此 Webhook，预警可按站点独立设置。</p></div><fieldset disabled={Boolean(busy)}><Field label="全局 Webhook" value={webhook} onChange={(value) => { setWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={() => testNotification()}>{busy === 'notify' ? '发送中…' : '测试通知'}</button></section>
+          <section className="notification-panel"><div><h3>每日晨报 · 企业微信通知</h3><p>独立配置晨报接收机器人，以表格图片汇总昨日消费和当前余额。测试按钮发送示例图片。首次未填写时不发送晨报。</p></div><fieldset disabled={Boolean(busy)}><Field label="晨报 Webhook" value={dailyReportWebhook} onChange={(value) => { setDailyReportWebhook(value); setDirty(true); }} type="password" autoComplete="off" placeholder={hasDailyReportWebhook ? '已安全保存，留空保持不变' : 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?...'} /></fieldset><button className="secondary-button" disabled={Boolean(busy)} onClick={() => testNotification('dailyReport')}>{busy === 'notify-report' ? '发送中…' : '测试晨报通知'}</button></section>
           {!sites.length && <div className="empty-state"><p>还没有监控站点，添加一个开始吧。</p><button className="primary-button" disabled={Boolean(busy)} onClick={add}><Plus size={15} aria-hidden="true" />添加站点</button></div>}
           <p id="site-order-help" className="site-order-help">拖动站点左侧手柄调整显示顺序；聚焦手柄后也可用上下方向键移动。排序保存后同步到数据概览。</p>
           {sites.map((site, index) => <SiteCard key={site.id} site={site} index={index} result={results[site.id]} usageResult={usageResults[site.id]} usageBusy={busy === `usage-${site.id}`} busy={Boolean(busy)} checking={checkingIds.includes(site.id)} selected={selected === site.id} dragging={draggedSite === site.id} dragOver={dragOverSite === site.id} onChange={change} onCheck={check} onUsage={queryTokenUsage} onToggle={toggle} onDelete={remove} onOpen={open} onDragStart={dragStart} onDragOver={dragOver} onDrop={drop} onDragEnd={dragEnd} onMove={moveSite} />)}

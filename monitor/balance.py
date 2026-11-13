@@ -2,6 +2,8 @@
 Balance fetching, WeCom notifications, and the daily-report logic.
 Mirrors getBalance, checkAndNotify, sendWecom, runDailyReport from server.js.
 """
+import base64
+import hashlib
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -20,6 +22,7 @@ from monitor.adapters import (
     upstream_fingerprint, url_for,
 )
 from monitor.storage import save_upstream_sessions, save_daily_usage
+from monitor.report_image import render_daily_report
 from monitor.time_utils import day_key_of, shift_day_key, local_parts
 
 logger = logging.getLogger(__name__)
@@ -747,10 +750,26 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
 # ── WeCom notification ──────────────────────────────────────────────────────
 
 def send_wecom(webhook: str, content: str) -> None:
+    _post_wecom(webhook, {'msgtype': 'markdown', 'markdown': {'content': content}})
+
+
+def send_wecom_image(webhook: str, image: bytes) -> None:
+    if not image or len(image) > 2 * 1024 * 1024:
+        raise ValueError('企业微信图片不能为空且不得超过 2 MB')
+    _post_wecom(webhook, {
+        'msgtype': 'image',
+        'image': {
+            'base64': base64.b64encode(image).decode('ascii'),
+            'md5': hashlib.md5(image, usedforsecurity=False).hexdigest(),
+        },
+    })
+
+
+def _post_wecom(webhook: str, payload: dict) -> None:
     try:
         resp = requests.post(
             webhook,
-            json={'msgtype': 'markdown', 'markdown': {'content': content}},
+            json=payload,
             timeout=10,
             allow_redirects=False,
         )
@@ -896,18 +915,22 @@ def usage_for_day(site_id: str, day_key: str) -> float | None:
 # ── Daily report ────────────────────────────────────────────────────────────
 
 def run_daily_report(*, timezone: str | None = None) -> bool:
+    webhook = state.daily_report_webhook
     enabled_sites = [s for s in state.saved_sites
                      if s.get('enabled', True) is not False
                      and (timezone is None or (s.get('timezone') or 'Asia/Shanghai') == timezone)]
-    if not enabled_sites or not state.global_webhook:
+    if not enabled_sites or not webhook:
         return False
 
     tz = timezone or enabled_sites[0].get('timezone') or 'Asia/Shanghai'
     today = day_key_of(tz)
     yesterday = shift_day_key(today, -1)
 
-    lines = []
+    rows = []
+    notes = []
     balance_totals: dict[str, float] = {}
+    usage_totals: dict[str, float] = {}
+    usage_incomplete = False
     ok_count = 0
 
     for site in enabled_sites:
@@ -925,40 +948,43 @@ def run_daily_report(*, timezone: str | None = None) -> bool:
             missing_keys = usage.get('failedCount', 0)
             balance_totals[currency] = balance_totals.get(currency, 0) + result['balance']
             if yesterday_usage is None:
+                usage_incomplete = True
                 usage_error = result.get('usageError') or '请检查消耗查询配置'
-                usage_text = ('消耗未配置' if usage_data is None
-                              and '请先配置消耗查询 API Key' in usage_error
-                              else f'消耗未获取（{usage_error}）')
+                unconfigured = usage_data is None and '请先配置消耗查询 API Key' in usage_error
+                usage_text = '未配置' if unconfigured else '未获取'
+                if not unconfigured:
+                    notes.append(f'{site_name}：消耗未获取（{usage_error}）')
             else:
-                usage_text = f'消耗 {yesterday_usage:.2f}'
+                usage_totals[currency] = usage_totals.get(currency, 0) + yesterday_usage
+                usage_text = f'{yesterday_usage:.2f}'
             if missing_keys:
-                usage_text += f'（{"成功项小计，" if yesterday_usage is not None else ""}{missing_keys} 个 Key 未获取）'
-            lines.append(f'> **{site_name}**：{amount}，{usage_text}')
+                usage_incomplete = True
+                usage_text += '*'
+                notes.append(f'{site_name}：{"消耗成功项小计，" if yesterday_usage is not None else ""}{missing_keys} 个 Key 未获取')
+            rows.append((site_name, amount, usage_text))
         except Exception as exc:
-            lines.append(f'> ❌ **{site_name}**：查询失败 - {str(exc) or "未知错误"}')
+            usage_incomplete = True
+            rows.append((site_name, '查询失败', '未获取'))
+            notes.append(f'{site_name}：查询失败 - {str(exc) or "未知错误"}')
 
     def sum_text(totals: dict) -> str:
         if not totals:
             return '--'
-        return ' / '.join(f'{v:.2f}' for v in totals.values())
+        return ' / '.join(
+            f'{value:.2f}' + (f' {currency or "未标币种"}' if len(totals) > 1 else '')
+            for currency, value in totals.items()
+        )
 
     failed = len(enabled_sites) - ok_count
-    try:
-        ts = datetime.now(dt_timezone.utc).astimezone(
-            __import__('zoneinfo').ZoneInfo(tz)
-        ).strftime('%Y-%m-%d %H:%M:%S')
-    except Exception:
-        ts = datetime.now(dt_timezone.utc).isoformat()
-
-    content = '\n'.join([
-        f'**数据中心晨报 · {ts}**',
-        *lines,
-        f'> 共 {len(enabled_sites)} 个站点{"，" + str(failed) + " 个查询失败" if failed else ""}',
-        f'> **总余额**：{sum_text(balance_totals) or "--"}',
-    ])
+    notes.append(f'共 {len(enabled_sites)} 个站点' + (f'，{failed} 个查询失败' if failed else ''))
 
     try:
-        send_wecom(state.global_webhook, content)
+        image = render_daily_report(
+            date=today.replace('-', '/'), rows=rows, notes=notes,
+            balance_total=sum_text(balance_totals) + ('（成功站点小计）' if balance_totals and failed else ''),
+            usage_total=sum_text(usage_totals) + ('（已获取部分小计）' if usage_totals and usage_incomplete else ''),
+        )
+        send_wecom_image(webhook, image)
         logger.info('Daily balance report sent for %d site(s)', len(enabled_sites))
         return True
     except Exception as exc:

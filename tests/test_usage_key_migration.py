@@ -1,10 +1,12 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'balance_watch.settings')
 
 import django
-django.setup()
+with patch('monitor.scheduler.start'):
+    django.setup()
 
 from monitor.adapters import public_site
 

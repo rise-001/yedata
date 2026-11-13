@@ -10,6 +10,7 @@ from django.db import models
 class GlobalSettings(models.Model):
     """Single-row table for global configuration (webhook, etc.)."""
     webhook = models.TextField(blank=True, default='')
+    daily_report_webhook = models.TextField(blank=True, default='')
 
     class Meta:
         app_label = 'monitor'

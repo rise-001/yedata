@@ -139,33 +139,84 @@ class DailyKeyUsageTests(unittest.TestCase):
             {'balance': 200, 'currency': 'CNY', 'usage': {'date': '2026-11-04', 'cost': 999}},
         ]
         with patch.object(state, 'saved_sites', [self.site, {**self.site, 'id': 'beta', 'name': 'Beta'}]), \
-                patch.object(state, 'global_webhook', 'https://example.com/webhook'), \
+                patch.object(state, 'daily_report_webhook', 'https://example.com/report'), \
                 patch.object(balance, 'get_balance', side_effect=results), \
                 patch.object(balance, 'record_daily_usage'), \
                 patch.object(balance, 'day_key_of', return_value='2026-11-05'), \
                 patch.object(balance, 'usage_for_day', return_value=999) as snapshots, \
-                patch.object(balance, 'send_wecom') as send:
+                patch.object(balance, 'render_daily_report', return_value=b'png') as render, \
+                patch.object(balance, 'send_wecom_image') as send:
             self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
         snapshots.assert_not_called()
-        report = send.call_args.args[1]
-        self.assertIn('Alpha**：100.00，消耗 1.25（成功项小计，1 个 Key 未获取）', report)
-        self.assertIn('Beta**：200.00，消耗未获取', report)
-        self.assertNotIn('Key 总消耗', report)
-        self.assertNotIn('仅已获取 Key 的小计', report)
-        self.assertNotIn('999', report)
+        report = render.call_args.kwargs
+        self.assertEqual(report['date'], '2026/11/05')
+        self.assertEqual(report['usage_total'], '1.25（已获取部分小计）')
+        self.assertEqual(report['balance_total'], '300.00')
+        self.assertEqual(report['rows'], [('Alpha', '100.00', '1.25*'), ('Beta', '200.00', '未获取')])
+        self.assertIn('Alpha：消耗成功项小计，1 个 Key 未获取', '\n'.join(report['notes']))
+        self.assertNotIn('消耗统计', '\n'.join(report['notes']))
+        self.assertNotIn('999', str(report))
+        send.assert_called_once_with('https://example.com/report', b'png')
 
     def test_report_labels_missing_usage_keys_as_unconfigured(self):
         result = {'balance': 100, 'currency': 'CNY', 'usage': None,
                   'usageError': '请先配置消耗查询 API Key'}
         with patch.object(state, 'saved_sites', [self.site]), \
-                patch.object(state, 'global_webhook', 'https://example.com/webhook'), \
+                patch.object(state, 'daily_report_webhook', 'https://example.com/report'), \
                 patch.object(balance, 'get_balance', return_value=result), \
                 patch.object(balance, 'record_daily_usage'), \
-                patch.object(balance, 'send_wecom') as send:
+                patch.object(balance, 'render_daily_report', return_value=b'png') as render, \
+                patch.object(balance, 'send_wecom_image'):
             self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
-        report = send.call_args.args[1]
-        self.assertIn('Alpha**：100.00，消耗未配置', report)
-        self.assertNotIn('请先配置消耗查询 API Key', report)
+        report = render.call_args.kwargs
+        self.assertEqual(report['rows'], [('Alpha', '100.00', '未配置')])
+        self.assertEqual(report['usage_total'], '--')
+        self.assertNotIn('请先配置消耗查询 API Key', str(report))
+
+    def test_report_totals_group_currencies_and_include_zero_without_disabled_sites(self):
+        sites = [self.site, {**self.site, 'id': 'beta'}, {**self.site, 'id': 'usd'},
+                 {**self.site, 'id': 'disabled', 'enabled': False}]
+        results = [
+            {'balance': amount, 'currency': currency, 'usage': {
+                'date': '2026-11-04', 'source': 'keys', 'cost': cost, 'failedCount': 0,
+            }} for amount, currency, cost in [(100, 'CNY', 1.25), (200, 'CNY', 2.75), (50, 'USD', 0)]
+        ]
+        with patch.object(state, 'saved_sites', sites), \
+                patch.object(state, 'daily_report_webhook', 'https://example.com/report'), \
+                patch.object(balance, 'get_balance', side_effect=results) as get, \
+                patch.object(balance, 'record_daily_usage'), \
+                patch.object(balance, 'day_key_of', return_value='2026-11-05'), \
+                patch.object(balance, 'render_daily_report', return_value=b'png') as render, \
+                patch.object(balance, 'send_wecom_image'):
+            self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
+        self.assertEqual(get.call_count, 3)
+        self.assertEqual(render.call_args.kwargs['usage_total'], '4.00 CNY / 0.00 USD')
+        self.assertEqual(render.call_args.kwargs['balance_total'], '300.00 CNY / 50.00 USD')
+
+    def test_report_distinguishes_zero_spend_from_missing_and_failed_sites(self):
+        result = {'balance': 0, 'currency': 'CNY', 'usage': {
+            'date': '2026-11-04', 'source': 'keys', 'cost': 0, 'failedCount': 0,
+        }}
+        for results, expected in (
+            ([result, ValueError('upstream unavailable')], [
+                '0.00（已获取部分小计）', '0.00（成功站点小计）',
+            ]),
+            ([ValueError('upstream unavailable'), ValueError('upstream unavailable')], [
+                '--', '--',
+            ]),
+        ):
+            with self.subTest(expected=expected), \
+                    patch.object(state, 'saved_sites', [self.site, {**self.site, 'id': 'beta'}]), \
+                    patch.object(state, 'daily_report_webhook', 'https://example.com/report'), \
+                    patch.object(balance, 'get_balance', side_effect=results), \
+                    patch.object(balance, 'record_daily_usage'), \
+                    patch.object(balance, 'day_key_of', return_value='2026-11-05'), \
+                    patch.object(balance, 'render_daily_report', return_value=b'png') as render, \
+                    patch.object(balance, 'send_wecom_image'):
+                self.assertTrue(balance.run_daily_report())
+                report = render.call_args.kwargs
+                self.assertEqual([report['usage_total'], report['balance_total']], expected)
+                self.assertIn('查询失败 - upstream unavailable', '\n'.join(report['notes']))
 
 
 if __name__ == '__main__':

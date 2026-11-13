@@ -31,10 +31,14 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
 
     webhook = str((settings_data or {}).get('webhook', '')).strip() or current_webhook
 
-    # Update global webhook.
+    # Keep report delivery independent from balance alerts; blank inputs retain secrets.
     gs = GlobalSettings.get()
     gs.webhook = webhook
-    gs.save(update_fields=['webhook'])
+    gs.daily_report_webhook = (
+        str((settings_data or {}).get('dailyReportWebhook') or '').strip()
+        or gs.daily_report_webhook
+    )
+    gs.save(update_fields=['webhook', 'daily_report_webhook'])
 
     # Build an id->dict map for merging.
     incoming = {str(s.get('id', '')): s for s in sites if s.get('id')}
@@ -103,15 +107,22 @@ def save_sites(sites: list[dict], settings_data: dict | None = None,
     return saved, webhook
 
 
-def save_global_webhook(webhook: str) -> str:
-    """Persist the shared WeCom webhook without requiring site data."""
+def load_daily_report_webhook() -> str:
+    from monitor.models import GlobalSettings
+
+    return GlobalSettings.get().daily_report_webhook
+
+
+def save_global_webhook(webhook: str, *, daily_report: bool = False) -> str:
+    """Persist the selected WeCom webhook without requiring site data."""
     from monitor.models import GlobalSettings
 
     value = str(webhook or '').strip()
     settings = GlobalSettings.get()
-    if settings.webhook != value:
-        settings.webhook = value
-        settings.save(update_fields=['webhook'])
+    field = 'daily_report_webhook' if daily_report else 'webhook'
+    if getattr(settings, field) != value:
+        setattr(settings, field, value)
+        settings.save(update_fields=[field])
     return value
 
 

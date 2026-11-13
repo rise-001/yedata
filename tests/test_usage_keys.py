@@ -63,6 +63,9 @@ old_apps = executor.loader.project_state([('monitor', '0006_daily_report')]).app
 old_apps.get_model('monitor', 'Site').objects.create(
     site_id='legacy', site_type='newapi', usage_token='sk-legacy', base_url='https://example.com')
 MigrationExecutor(connection).migrate([('monitor', '0007_site_usage_keys')])
+# Runtime models require the current schema after validating the legacy migration path.
+executor = MigrationExecutor(connection)
+executor.migrate(executor.loader.graph.leaf_nodes())
 saved, _ = load_sites()
 assert saved[0]['usageKeys'] == [{'id': 'default', 'name': '\u9ed8\u8ba4 Key', 'token': 'sk-legacy'}]
 public = public_site(saved[0])

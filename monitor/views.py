@@ -20,9 +20,10 @@ from monitor import state
 from monitor.adapters import (
     normalize_site, public_site, validate_site_list, with_saved_secrets,
 )
-from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom, summarize_key_usage
+from monitor.balance import check_and_notify, get_token_usage, record_daily_usage, send_wecom, send_wecom_image, summarize_key_usage
+from monitor.report_image import render_daily_report
 from monitor.usage_cache import read_usage_history, refresh_usage_history, save_today_usage
-from monitor.storage import save_sites, save_upstream_sessions
+from monitor.storage import load_daily_report_webhook, save_sites, save_upstream_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,10 @@ def api_sites(request: HttpRequest) -> HttpResponse:
             'data': {
                 'sites': [public_site(s) for s in state.saved_sites],
                 'results': results,
-                'settings': {'hasWebhook': bool(state.global_webhook)},
+                'settings': {
+                    'hasWebhook': bool(state.global_webhook),
+                    'hasDailyReportWebhook': bool(state.daily_report_webhook),
+                },
             },
         })
 
@@ -170,6 +174,7 @@ def api_sites(request: HttpRequest) -> HttpResponse:
             return _err(str(exc))
         state.saved_sites = saved
         state.global_webhook = webhook
+        state.daily_report_webhook = load_daily_report_webhook()
 
         # Clean up orphaned scheduled state.
         active_ids = {s['id'] for s in saved}
@@ -194,7 +199,10 @@ def api_sites(request: HttpRequest) -> HttpResponse:
             'ok': True,
             'data': {
                 'sites': [public_site(s) for s in saved],
-                'settings': {'hasWebhook': bool(webhook)},
+                'settings': {
+                    'hasWebhook': bool(webhook),
+                    'hasDailyReportWebhook': bool(state.daily_report_webhook),
+                },
             },
         })
 
@@ -315,16 +323,35 @@ def api_notify_test(request: HttpRequest) -> HttpResponse:
         return _err('Method not allowed', 405)
     try:
         body = _read_body(request)
-        webhook = str(body.get('webhook') or state.global_webhook).strip()
+        target = body.get('target', 'alert')
+        if target not in ('alert', 'dailyReport'):
+            return _err('无效的通知类型')
+        daily_report = target == 'dailyReport'
+        saved_webhook = state.daily_report_webhook if daily_report else state.global_webhook
+        webhook = str(body.get('webhook') or '').strip() or saved_webhook
         if not webhook:
-            return _err('请填写企业微信机器人 Webhook')
-        send_wecom(webhook, '**数据中心 · 通知测试**\n> 全局企业微信通知已连接')
+            return _err('请填写晨报企业微信 Webhook' if daily_report else '请填写企业微信机器人 Webhook')
+        if daily_report:
+            from monitor.time_utils import day_key_of
+            image = render_daily_report(
+                title='数据中心晨报（测试）', date=day_key_of('Asia/Shanghai').replace('-', '/'),
+                balance_total='100.00', usage_total='4.35',
+                rows=[('示例站点', '100.00', '4.35')],
+                notes=['测试数据，仅用于验证晨报图片通知。正式晨报统计昨日消耗。'],
+            )
+            send_wecom_image(webhook, image)
+        else:
+            send_wecom(webhook, '**数据中心 · 余额预警通知测试**\n> 余额预警企业微信通知已连接')
         # A successful test with a newly entered URL should also activate it
-        # for scheduled alerts. The test button is commonly used as the only
+        # for scheduled notifications. The test button is commonly used as the only
         # save action for notification settings.
         if body.get('webhook'):
             from monitor.storage import save_global_webhook
-            state.global_webhook = save_global_webhook(webhook)
+            value = save_global_webhook(webhook, daily_report=daily_report)
+            if daily_report:
+                state.daily_report_webhook = value
+            else:
+                state.global_webhook = value
         return _json({'ok': True})
     except Exception as exc:
         return _err(str(exc))

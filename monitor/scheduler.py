@@ -20,7 +20,7 @@ def _run_daily_reports(now: float) -> None:
 
     tz_set = {(s.get('timezone') or 'Asia/Shanghai')
               for s in state.saved_sites if s.get('enabled', True) is not False}
-    if state.global_webhook:
+    if state.daily_report_webhook:
         for tz in tz_set:
             parts = local_parts(tz)
             # Catch up after a restart or an outage, until the local day ends.
@@ -69,13 +69,14 @@ def start():
         return
 
     from monitor import state
-    from monitor.storage import load_sites, load_upstream_sessions, load_daily_usage
+    from monitor.storage import load_sites, load_upstream_sessions, load_daily_usage, load_daily_report_webhook
     from monitor.adapters import normalize_site, with_saved_secrets
 
     # Load persistent state on startup.
     saved, webhook = load_sites()
     state.saved_sites = saved
     state.global_webhook = webhook
+    state.daily_report_webhook = load_daily_report_webhook()
     state.upstream_sessions.update(load_upstream_sessions())
     state.daily_usage.update(load_daily_usage())
 

@@ -37,5 +37,6 @@ daily_usage: dict[str, dict[str, float]] = {}
 # ── Saved sites + webhook (primary source of truth is disk; this is cache) -
 saved_sites: list[dict] = []
 global_webhook: str = ''
+daily_report_webhook: str = ''
 
 _state_lock = threading.Lock()

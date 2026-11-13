@@ -1,8 +1,12 @@
+import base64
+import hashlib
+from io import BytesIO
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import requests
+from PIL import Image
 
 from monitor import balance, scheduler, state
 
@@ -27,6 +31,7 @@ class NotificationTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         for target, value in (
             ('monitor.state.global_webhook', 'https://example.com/webhook?key=secret'),
+            ('monitor.state.daily_report_webhook', 'https://example.com/report?key=report-secret'),
             ('monitor.state.saved_sites', [dict(SITE)]),
             ('monitor.scheduler.settings', SimpleNamespace(DAILY_REPORT_HOUR=8)),
         ):
@@ -80,6 +85,30 @@ class NotificationTests(unittest.TestCase):
                         balance.send_wecom(state.global_webhook, 'test')
                 self.assertNotIn('key=secret', str(caught.exception))
 
+    def test_image_payload_uses_png_bytes_and_matching_md5(self):
+        png = balance.render_daily_report(date='2026/11/13', balance_total='43.00',
+                                         usage_total='4.35', rows=[('apiling', '43.00', '4.35')])
+        with patch.object(balance.requests, 'post', return_value=self.response({'errcode': 0})) as post:
+            balance.send_wecom_image(state.daily_report_webhook, png)
+        payload = post.call_args.kwargs['json']
+        self.assertEqual(payload['msgtype'], 'image')
+        self.assertEqual(base64.b64decode(payload['image']['base64']), png)
+        self.assertEqual(payload['image']['md5'], hashlib.md5(png, usedforsecurity=False).hexdigest())
+        self.assertEqual(post.call_args.args[0], state.daily_report_webhook)
+        self.assertFalse(post.call_args.kwargs['allow_redirects'])
+        self.assertEqual(post.call_args.kwargs['timeout'], 10)
+
+    def test_image_delivery_requires_success_and_rejects_oversized_payloads(self):
+        for data in ({}, {'errcode': 40009, 'errmsg': 'invalid image size'}, {'errcode': False}):
+            with self.subTest(data=data), patch.object(balance.requests, 'post', return_value=self.response(data)):
+                with self.assertRaises(ValueError):
+                    balance.send_wecom_image(state.daily_report_webhook, b'png')
+        with patch.object(balance.requests, 'post') as post:
+            for image in (b'', b'x' * (2 * 1024 * 1024 + 1)):
+                with self.assertRaisesRegex(ValueError, '2 MB'):
+                    balance.send_wecom_image(state.daily_report_webhook, image)
+            post.assert_not_called()
+
     @patch.object(balance, 'get_balance', return_value=RESULT)
     @patch.object(balance, 'send_wecom')
     def test_same_email_on_different_sites_gets_independent_alerts(self, send, get):
@@ -89,6 +118,7 @@ class NotificationTests(unittest.TestCase):
         self.assertFalse(again['notified'])
         self.assertIn('6 小时', again['notificationMessage'])
         self.assertEqual(send.call_count, 2)
+        self.assertTrue(all(call.args[0] == state.global_webhook for call in send.call_args_list))
 
     @patch.object(balance, 'get_balance', return_value=RESULT)
     @patch.object(balance, 'send_wecom', side_effect=[ValueError('send failed'), None])
@@ -118,24 +148,40 @@ class NotificationTests(unittest.TestCase):
 
     @patch.object(balance, 'get_balance', return_value=RESULT)
     @patch.object(balance, 'record_daily_usage')
-    @patch.object(balance, 'send_wecom')
+    @patch.object(balance, 'send_wecom_image')
     @patch.object(balance, 'day_key_of', return_value='2026-11-05')
     def test_daily_report_returns_delivery_result_and_filters_timezone(self, day, send, record, get):
         state.saved_sites.append({**SITE, 'id': 'beta', 'timezone': 'UTC'})
         self.assertTrue(balance.run_daily_report(timezone='Asia/Shanghai'))
         get.assert_called_once()
         self.assertEqual(get.call_args.args[0]['id'], 'alpha')
-        report_text = send.call_args.args[1]
+        self.assertEqual(send.call_args.args[0], state.daily_report_webhook)
+        with Image.open(BytesIO(send.call_args.args[1])) as image:
+            self.assertEqual(image.format, 'PNG')
+            self.assertEqual(image.width, 720)
         self.assertEqual(get.call_args.kwargs, {'usage_day': '2026-11-04'})
-        self.assertIn('Alpha**：10.00，消耗 2.00', report_text)
-        self.assertNotIn('Key 总消耗', report_text)
-        self.assertNotIn('CNY', report_text)
-        self.assertNotIn('阈值', report_text)
         send.side_effect = ValueError('send failed')
         with self.assertLogs('monitor.balance', level='ERROR'):
             self.assertFalse(balance.run_daily_report(timezone='Asia/Shanghai'))
         send.reset_mock()
         self.assertFalse(balance.run_daily_report(timezone='Asia/Tokyo'))
+        send.assert_not_called()
+
+    @patch.object(balance, 'get_balance')
+    @patch.object(balance, 'send_wecom_image')
+    def test_daily_report_does_not_fall_back_to_alert_webhook(self, send, get):
+        with patch.object(state, 'daily_report_webhook', ''):
+            self.assertFalse(balance.run_daily_report())
+        get.assert_not_called()
+        send.assert_not_called()
+
+    @patch.object(balance, 'get_balance', return_value=RESULT)
+    @patch.object(balance, 'record_daily_usage')
+    @patch.object(balance, 'send_wecom_image')
+    @patch.object(balance, 'render_daily_report', side_effect=ValueError('missing font'))
+    def test_image_render_failure_remains_retryable(self, render, send, record, get):
+        with self.assertLogs('monitor.balance', level='ERROR'):
+            self.assertFalse(balance.run_daily_report())
         send.assert_not_called()
 
     @patch('monitor.time_utils.local_parts', return_value={'year': '2026', 'month': '10', 'day': '27', 'hour': '09'})
@@ -166,10 +212,11 @@ class NotificationTests(unittest.TestCase):
         scheduler._run_daily_reports(1000)
         report.assert_not_called()
         parts.return_value['hour'] = '08'
-        with patch.object(state, 'global_webhook', ''):
+        with patch.object(state, 'daily_report_webhook', ''):
             scheduler._run_daily_reports(1000)
         self.assertEqual(state.daily_report_last_attempt, {})
-        scheduler._run_daily_reports(1000)
+        with patch.object(state, 'global_webhook', ''):
+            scheduler._run_daily_reports(1000)
         report.assert_called_once()
 
     @patch('monitor.time_utils.local_parts', return_value={'year': '2026', 'month': '10', 'day': '27', 'hour': '09'})

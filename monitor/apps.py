@@ -26,10 +26,11 @@ class MonitorConfig(AppConfig):
         else:
             try:
                 from monitor import state
-                from monitor.storage import load_sites, load_upstream_sessions, load_daily_usage
+                from monitor.storage import load_sites, load_upstream_sessions, load_daily_usage, load_daily_report_webhook
                 saved, webhook = load_sites()
                 state.saved_sites = saved
                 state.global_webhook = webhook
+                state.daily_report_webhook = load_daily_report_webhook()
                 state.upstream_sessions.update(load_upstream_sessions())
                 state.daily_usage.update(load_daily_usage())
             except Exception:

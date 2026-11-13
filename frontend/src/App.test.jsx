@@ -23,6 +23,8 @@ function mockApi(config = {}) {
         hasUsageToken: usageKeys?.some((key) => key.token || key.hasToken) || Boolean(usageToken),
         usageKeys: usageKeys?.map(({ token, ...key }) => ({ ...key, hasToken: Boolean(token || key.hasToken) })),
       }));
+      if (body.settings?.webhook) state.settings.hasWebhook = true;
+      if (body.settings?.dailyReportWebhook) state.settings.hasDailyReportWebhook = true;
       return response({ ok: true, data: { sites: state.sites, settings: state.settings } });
     }
     if (path === 'sites') return response(state.loadError ? { ok: false, message: '读取失败' } : { ok: true, data: { sites: state.sites, results: state.results, settings: state.settings } });
@@ -403,6 +405,39 @@ describe('React 页面流程', () => {
     await user.click(screen.getByRole('button', { name: '测试通知' }));
     expect(await screen.findByText('测试通知已发送')).toBeInTheDocument();
     expect(JSON.parse(fetch.mock.calls.find(([url]) => url === '/api/notify-test')[1].body)).toEqual({ webhook: '' });
+  });
+
+  it('晨报 Webhook 独立保存，留空时保留已保存状态', async () => {
+    const { fetch } = mockApi(); const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.type(screen.getByLabelText('晨报 Webhook'), 'https://example.com/report');
+    await user.click(screen.getAllByRole('button', { name: '保存配置' })[0]);
+    await screen.findByText('配置已保存，后台监控已生效');
+    const saved = JSON.parse(fetch.mock.calls.find(([, options]) => options.method === 'PUT')[1].body);
+    expect(saved.settings).toEqual({ webhook: '', dailyReportWebhook: 'https://example.com/report' });
+    expect(screen.getByLabelText('晨报 Webhook')).toHaveValue('');
+    expect(screen.getByLabelText('晨报 Webhook')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+    expect(screen.getByLabelText('全局 Webhook')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+    await user.click(screen.getByRole('button', { name: '测试晨报通知' }));
+    expect(await screen.findByText('晨报测试通知已发送')).toBeInTheDocument();
+    expect(JSON.parse(fetch.mock.calls.find(([url]) => url === '/api/notify-test')[1].body)).toEqual({ webhook: '', target: 'dailyReport' });
+  });
+
+  it('晨报未填写时不复用预警 Webhook，新值测试成功后显示已保存', async () => {
+    const { fetch } = mockApi(); const user = userEvent.setup();
+    render(<App />); await openSiteSettings(user);
+    await user.click(screen.getByRole('button', { name: '测试晨报通知' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('请先填写晨报企业微信 Webhook');
+    expect(fetch.mock.calls.some(([url]) => url === '/api/notify-test')).toBe(false);
+    await user.type(screen.getByLabelText('晨报 Webhook'), 'https://example.com/report');
+    await user.click(screen.getByRole('button', { name: '测试晨报通知' }));
+    expect(await screen.findByText('晨报测试通知已发送')).toBeInTheDocument();
+    expect(JSON.parse(fetch.mock.calls.find(([url]) => url === '/api/notify-test')[1].body)).toEqual({ webhook: 'https://example.com/report', target: 'dailyReport' });
+    expect(screen.getByLabelText('晨报 Webhook')).toHaveValue('');
+    expect(screen.getByLabelText('晨报 Webhook')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
+    await user.click(screen.getByRole('button', { name: '测试通知' }));
+    expect(await screen.findByText('测试通知已发送')).toBeInTheDocument();
+    expect(JSON.parse(fetch.mock.calls.filter(([url]) => url === '/api/notify-test').at(-1)[1].body)).toEqual({ webhook: '' });
   });
 
   it('概览直接显示通知失败，即使余额查询成功', async () => {
