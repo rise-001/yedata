@@ -259,6 +259,16 @@ test('桌面端完成登录、编辑和余额检查', async ({ page }, testInfo)
   await expect(page.getByRole('button', { name: /Alpha/ })).toBeVisible();
 
   await page.getByRole('button', { name: /Alpha/ }).click();
+  const siteType = page.getByLabel('网站类型');
+  const authMode = page.getByRole('combobox', { name: '认证方式', exact: true });
+  await siteType.selectOption('newapi');
+  await expect(authMode).toBeVisible();
+  await siteType.selectOption('sub2');
+  await expect(authMode).toHaveCount(0);
+  await expect(page.getByLabel('账号 / 邮箱', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('密码', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '添加 API Key' }).click();
+  await page.getByLabel('消耗查询 API Key', { exact: true }).fill('sk-test-key');
   await page.getByLabel('站点名称').fill('生产站点');
   await page.getByRole('button', { name: '检查全部' }).click();
   await expect(page.getByText('1 个站点检查完成')).toBeVisible();
@@ -268,7 +278,10 @@ test('桌面端完成登录、编辑和余额检查', async ({ page }, testInfo)
   const checkIndex = state.calls.findIndex((call) => call.path === 'check-many');
   expect(putIndex).toBeGreaterThan(-1);
   expect(checkIndex).toBeGreaterThan(putIndex);
-  expect(state.calls[putIndex].body.sites[0].name).toBe('生产站点');
+  expect(state.calls[putIndex].body.sites[0]).toMatchObject({
+    name: '生产站点', siteType: 'sub2', authMode: 'apiKey',
+    usageKeys: [{ token: 'sk-test-key' }],
+  });
   expect(errors).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath('desktop-workspace.png'), fullPage: true });
 });
