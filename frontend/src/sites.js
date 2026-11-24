@@ -1,9 +1,17 @@
+const sub2UsagePath = '/v1/usage';
+const sub2Authentication = { authMode: 'apiKey', loginPath: '', mePath: sub2UsagePath, usagePath: '', balanceField: 'balance' };
+
 export const presets = {
-  sub2: { loginPath: '/api/v1/auth/login', mePath: '/api/v1/auth/me', usagePath: '/api/v1/usage/dashboard/trend', balanceField: 'balance', balanceDivisor: 1, currency: 'CNY' },
+  sub2: { ...sub2Authentication, balanceDivisor: 1, currency: 'USD' },
   newapi: { loginPath: '/api/user/login', mePath: '/api/user/self', usagePath: '', balanceField: 'quota', balanceDivisor: 500000, currency: 'CNY' },
 };
 
 export const typeNames = { auto: '自动识别', sub2: 'Sub2', newapi: 'New API', custom: '自定义' };
+
+export function isSub2Site(site) {
+  return site.siteType === 'sub2' || ((!site.siteType || site.siteType === 'auto')
+    && [sub2UsagePath, '/api/v1/auth/me'].includes(site.mePath));
+}
 
 export function newUsageKey(number) {
   return {
@@ -13,12 +21,14 @@ export function newUsageKey(number) {
 }
 
 export function hydrateSite(site) {
+  const sub2 = isSub2Site(site);
   return {
     name: '', baseUrl: '', timezone: 'Asia/Shanghai', loginPath: '', mePath: '', usagePath: '',
     siteType: 'auto', authMode: 'password', email: '', password: '', token: '', sessionCookie: '', usageToken: '',
     newApiUserId: '', threshold: 100, intervalSeconds: 300, balanceField: 'auto',
     balanceDivisor: '', balanceMultiplier: 1, currency: '', enabled: true, notifyEnabled: true,
     ...site,
+    ...(sub2 ? { ...sub2Authentication, currency: site.currency || presets.sub2.currency } : {}),
     balanceDivisor: site.balanceDivisor ?? '',
     balanceMultiplier: site.balanceMultiplier ?? 1,
     usageKeys: (site.usageKeys ?? (site.hasUsageToken || site.usageToken
@@ -36,6 +46,7 @@ export function newSite(number) {
 
 export function serializeSite(site) {
   const { _new, ...data } = site;
+  if (isSub2Site(site)) Object.assign(data, sub2Authentication);
   for (const key of ['name', 'baseUrl', 'timezone', 'loginPath', 'mePath', 'usagePath', 'email', 'newApiUserId', 'currency', 'balanceField']) {
     data[key] = String(data[key] ?? '').trim();
   }
@@ -61,7 +72,7 @@ export function validateSites(sites) {
     const validAuth = site.authMode === 'token' ? site.token || site.hasToken
       : site.authMode === 'cookie' ? site.sessionCookie || site.hasSessionCookie
         : site.email && (site.password || site.hasPassword);
-    if (!validAuth) throw new Error(`请完整填写“${site.name}”的认证信息`);
+    if (!isSub2Site(site) && !validAuth) throw new Error(`请完整填写“${site.name}”的认证信息`);
     if (site.usageKeys.length > 20) throw new Error(`“${site.name}”最多可添加 20 个消耗查询 API Key`);
     if (site.usageKeys.some((key) => !key.token && !key.hasToken)) {
       throw new Error(`请填写“${site.name}”的消耗查询 API Key，或删除空白项`);

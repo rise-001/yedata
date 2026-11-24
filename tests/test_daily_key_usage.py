@@ -26,9 +26,12 @@ class DailyKeyUsageTests(unittest.TestCase):
     def fetch(self, url, *, headers, timeout=None):
         path = urlsplit(url).path
         query = parse_qs(urlsplit(url).query)
-        if path in ('/api/v1/auth/me', '/api/user/self'):
+        if path == '/api/user/self':
             return {'data': {'balance': 100, 'quota': 100, 'used_quota': 99999999}}
         if path == '/v1/usage':
+            if not query:
+                self.assertEqual(headers, {'Authorization': 'Bearer sk-one'})
+                return {'balance': 100}
             self.assertEqual(query, {'days': ['2'], 'timezone': ['Asia/Shanghai']})
             cost = 1.25 if headers['Authorization'] == 'Bearer sk-one' else 2.5
             return {'usage': {'today': {'actual_cost': 999}, 'total': {'actual_cost': 99999}},
@@ -48,29 +51,29 @@ class DailyKeyUsageTests(unittest.TestCase):
         for site_type in ('sub2', 'newapi'):
             with self.subTest(site_type=site_type), patch.object(balance, 'fetch_json', side_effect=self.fetch):
                 result = balance.get_balance({**self.site, 'siteType': site_type}, usage_day='2026-11-04')
-            self.assertEqual(result['usage'], {
-                'date': '2026-11-04', 'source': 'keys', 'cost': 3.75,
-                'successCount': 2, 'failedCount': 0, 'error': '',
-            })
-            self.assertEqual(result['balance'], 200)
-            self.assertIsNone(result['todayUsage'])
+                self.assertEqual(result['usage'], {
+                    'date': '2026-11-04', 'source': 'keys', 'cost': 3.75,
+                    'successCount': 2, 'failedCount': 0, 'error': '',
+                })
+                self.assertEqual(result['balance'], 200)
+                self.assertIsNone(result['todayUsage'])
 
     def test_partial_and_all_failures_keep_balance_and_never_report_unknown_as_zero(self):
         for fail_all in (False, True):
             def fetch(url, **kwargs):
-                if '/v1/usage' in url and (fail_all or kwargs['headers']['Authorization'] == 'Bearer sk-two'):
+                if urlsplit(url).query and (fail_all or kwargs['headers']['Authorization'] == 'Bearer sk-two'):
                     raise requests.Timeout()
                 return self.fetch(url, **kwargs)
             with self.subTest(fail_all=fail_all), patch.object(balance, 'fetch_json', side_effect=fetch):
                 result = balance.get_balance(self.site, usage_day='2026-11-04')
-            self.assertEqual(result['balance'], 200)
-            self.assertEqual(result['usage']['cost'], None if fail_all else 1.25)
-            self.assertEqual(result['usage']['failedCount'], 2 if fail_all else 1)
-            self.assertIn('超时', result['usageError'])
+                self.assertEqual(result['balance'], 200)
+                self.assertEqual(result['usage']['cost'], None if fail_all else 1.25)
+                self.assertEqual(result['usage']['failedCount'], 2 if fail_all else 1)
+                self.assertIn('超时', result['usageError'])
 
-    def test_no_keys_makes_no_account_consumption_request(self):
+    def test_newapi_without_keys_makes_no_account_consumption_request(self):
         with patch.object(balance, 'fetch_json', side_effect=self.fetch) as fetch:
-            result = balance.get_balance({**self.site, 'usageKeys': []}, usage_day='2026-11-04')
+            result = balance.get_balance({**self.site, 'siteType': 'newapi', 'usageKeys': []}, usage_day='2026-11-04')
         fetch.assert_called_once()
         self.assertIsNone(result['usage'])
         self.assertIn('API Key', result['usageError'])

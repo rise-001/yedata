@@ -146,7 +146,7 @@ describe('React 页面流程', () => {
   });
 
   it('编辑并保存配置，保留已保存的 Token', async () => {
-    const { fetch } = mockApi();
+    const { fetch } = mockApi({ sites: [{ ...initialSite, siteType: 'newapi' }] });
     const user = userEvent.setup();
     render(<App />);
     const name = await openSiteSettings(user);
@@ -354,6 +354,7 @@ describe('React 页面流程', () => {
     } });
     const user = userEvent.setup();
     render(<App />); await openSiteSettings(user);
+    expect(screen.queryByLabelText('认证方式')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '消耗查询' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: '添加 API Key' }));
     await user.clear(screen.getByLabelText('Key 名称 1'));
@@ -373,7 +374,9 @@ describe('React 页面流程', () => {
     expect(screen.getByLabelText('消耗查询 API Key')).toHaveAttribute('placeholder', '已安全保存，留空保持不变');
     const saveIndex = fetch.mock.calls.findIndex(([, options]) => options.method === 'PUT');
     expect(saveIndex).toBeLessThan(fetch.mock.calls.findIndex(([url]) => url === '/api/usage/token'));
-    expect(JSON.parse(fetch.mock.calls[saveIndex][1].body).sites[0].usageKeys.map((key) => key.token)).toEqual(['sk-first', 'sk-second', 'sk-third']);
+    const [site] = JSON.parse(fetch.mock.calls[saveIndex][1].body).sites;
+    expect(site).toMatchObject({ authMode: 'apiKey', mePath: '/v1/usage' });
+    expect(site.usageKeys.map((key) => key.token)).toEqual(['sk-first', 'sk-second', 'sk-third']);
   });
 
   it('可删除全部已保存的 Key，不会重新恢复旧值', async () => {

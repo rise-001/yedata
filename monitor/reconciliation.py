@@ -47,7 +47,10 @@ def fingerprint(site):
         identity[key] = str(cfg.get(key) or '')
     identity['timezone'] = cfg.get('timezone') or 'Asia/Shanghai'
     identity['authMode'] = cfg.get('authMode') or 'password'
-    identity['keys'] = sorted(key['token'] for key in get_usage_keys(cfg))
+    key_tokens = [key['token'] for key in get_usage_keys(cfg)]
+    identity['keys'] = sorted(key_tokens)
+    if is_sub2_site(cfg):
+        identity['balanceKey'] = next(iter(key_tokens), '')
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 

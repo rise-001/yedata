@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, ArrowUpRight, ChevronDown, ChevronUp, CircleCheck, ExternalLink, Globe2, GripVertical, Layers3, Plus, Power, RefreshCw, Search, ShieldCheck, TriangleAlert, Trash2, WalletCards, X } from 'lucide-react';
-import { formatBalance, formatInterval, formatTime, getTodayUsage, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
+import { formatBalance, formatInterval, formatTime, getTodayUsage, isSub2Site, newUsageKey, presets, siteStatus, typeNames } from './sites.js';
 import UsageHistory from './UsageHistory.jsx';
 
 export function Brand() {
@@ -68,12 +68,20 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
   const isNewApi = site.siteType === 'newapi' || (site.siteType === 'auto'
     && (site.mePath === '/api/user/self' || site.balanceField === 'quota'));
   const showUserId = isNewApi || site.authMode === 'token';
-  const isSub2 = site.siteType === 'sub2' || (site.siteType === 'auto' && site.mePath === '/api/v1/auth/me');
+  const isSub2 = isSub2Site(site);
   const supportsUsage = isNewApi || isSub2;
   const secretPlaceholder = (key) => site[`has${key[0].toUpperCase()}${key.slice(1)}`]
     ? '已安全保存，留空保持不变' : '输入凭据';
   const usageKeys = site.usageKeys;
   const updateUsageKey = (id, patch) => update('usageKeys')(usageKeys.map((key) => key.id === id ? { ...key, ...patch } : key));
+  function changeSiteType(siteType) {
+    const next = { ...presets[siteType], siteType };
+    if (isSub2 && !isSub2Site({ ...site, ...next })) {
+      next.authMode = 'password';
+      if (siteType === 'custom') Object.assign(next, { mePath: '', balanceField: 'auto' });
+    }
+    onChange(site.id, next);
+  }
   function handleDragKeyDown(event) {
     const direction = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
     if (!direction) return;
@@ -102,17 +110,19 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
       <fieldset disabled={busy}>
         <div className="fields-grid">
           {field('name', '站点名称', { maxLength: 80 })}
-          <Field label="网站类型"><select value={site.siteType} onChange={(event) => onChange(site.id, { siteType: event.target.value, ...(presets[event.target.value] || {}) })}>
+          <Field label="网站类型"><select value={site.siteType} onChange={(event) => changeSiteType(event.target.value)}>
             {Object.entries(typeNames).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>
           {field('baseUrl', '接口地址', { type: 'url', placeholder: 'https://example.com', wide: true })}
-          <Field label="认证方式"><select value={site.authMode} onChange={(event) => update('authMode')(event.target.value)}><option value="password">账号密码登录</option><option value="token">访问令牌 / Bearer Token</option><option value="cookie">登录 Cookie（手动粘贴）</option></select></Field>
-          {showUserId && field('newApiUserId', 'New-Api-User ID', { inputMode: 'numeric', placeholder: '账号的数字 ID' })}
-          {site.authMode === 'password' && <>{field('email', '账号 / 邮箱', { autoComplete: 'off' })}{field('password', '密码', { type: 'password', autoComplete: 'new-password', placeholder: secretPlaceholder('password') })}</>}
-          {site.authMode === 'token' && field('token', '访问令牌 / Bearer Token', { type: 'password', autoComplete: 'off', placeholder: secretPlaceholder('token'), wide: true })}
-          {site.authMode === 'cookie' && <Field label="登录 Cookie" wide><textarea rows={3} value={site.sessionCookie} autoComplete="off" spellCheck={false} onChange={(event) => update('sessionCookie')(event.target.value)} placeholder={secretPlaceholder('sessionCookie')} /></Field>}
+          {!isSub2 && <>
+            <Field label="认证方式"><select value={site.authMode} onChange={(event) => update('authMode')(event.target.value)}><option value="password">账号密码登录</option><option value="token">访问令牌 / Bearer Token</option><option value="cookie">登录 Cookie（手动粘贴）</option></select></Field>
+            {showUserId && field('newApiUserId', 'New-Api-User ID', { inputMode: 'numeric', placeholder: '账号的数字 ID' })}
+            {site.authMode === 'password' && <>{field('email', '账号 / 邮箱', { autoComplete: 'off' })}{field('password', '密码', { type: 'password', autoComplete: 'new-password', placeholder: secretPlaceholder('password') })}</>}
+            {site.authMode === 'token' && field('token', '访问令牌 / Bearer Token', { type: 'password', autoComplete: 'off', placeholder: secretPlaceholder('token'), wide: true })}
+            {site.authMode === 'cookie' && <Field label="登录 Cookie" wide><textarea rows={3} value={site.sessionCookie} autoComplete="off" spellCheck={false} onChange={(event) => update('sessionCookie')(event.target.value)} placeholder={secretPlaceholder('sessionCookie')} /></Field>}
+          </>}
           {supportsUsage && <section className="usage-keys-editor" aria-label="消耗查询 API Keys">
             <div className="usage-keys-heading"><strong>消耗查询 API Keys</strong><button className="text-button" type="button" disabled={usageKeys.length >= 20} onClick={() => update('usageKeys')([...usageKeys, newUsageKey(usageKeys.length + 1)])}><Plus size={13} aria-hidden="true" />添加 API Key</button></div>
-            <p>{isSub2 ? '逐个查询今日使用金额。' : '逐个查询今日与累计消耗金额，今日统计使用站点已保存的访问令牌和用户 ID。'}可添加多个 Key，留空保留已保存的值，删除后保存生效。</p>
+            <p>{isSub2 ? '第一个 API Key 用于查询账户余额，所有已添加的 Key 都用于查询消耗。' : '逐个查询今日与累计消耗金额，今日统计使用站点已保存的访问令牌和用户 ID。'}留空保留已保存的值，删除后保存生效。</p>
             {usageKeys.map((key, keyIndex) => <div className="usage-key-fields" key={key.id}>
               <Field label={`Key 名称 ${keyIndex + 1}`} value={key.name} maxLength={80} onChange={(name) => updateUsageKey(key.id, { name })} />
               <Field label={keyIndex === 0 ? '消耗查询 API Key' : `消耗查询 API Key ${keyIndex + 1}`} value={key.token} type="password" autoComplete="off" placeholder={key.hasToken ? '已安全保存，留空保持不变' : 'sk-...'} onChange={(token) => updateUsageKey(key.id, { token })} />
@@ -124,8 +134,10 @@ export function SiteCard({ site, result, usageResult, usageBusy, index, busy, ch
           {field('balanceMultiplier', '余额倍率', { type: 'number', min: '0.000001', step: 'any' })}
           {advanced && <>
             <Field label="时区"><select value={site.timezone} onChange={(event) => update('timezone')(event.target.value)}>{[...new Set([site.timezone, 'Asia/Shanghai', 'UTC', 'Asia/Tokyo'])].map((zone) => <option key={zone}>{zone}</option>)}</select></Field>
-            {field('loginPath', '登录路径')}{field('mePath', '余额路径')}{!isNewApi && field('usagePath', '用量接口', { placeholder: '留空表示不查询', wide: true })}
-            {field('balanceField', '余额字段', { placeholder: 'auto / balance / quota' })}
+            {!isSub2 && <>
+              {field('loginPath', '登录路径')}{field('mePath', '余额路径')}{!isNewApi && field('usagePath', '用量接口', { placeholder: '留空表示不查询', wide: true })}
+              {field('balanceField', '余额字段', { placeholder: 'auto / balance / quota' })}
+            </>}
             {field('balanceDivisor', '换算除数', { type: 'number', min: '0.000001', step: 'any', placeholder: '自动识别' })}
             {field('currency', '币种', { maxLength: 8, placeholder: '自动识别' })}
           </>}

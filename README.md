@@ -22,7 +22,9 @@
 
 ## 认证方式
 
-每个站点可选三种认证方式：
+Sub2 使用站点设置中已配置的第一个 API Key，以 `Authorization: Bearer <API Key>` 请求 `GET /v1/usage`，超时为 10 秒。接口返回的 `balance` 是账户余额，新建站点默认显示 USD。已有 Sub2 站点会直接复用已保存的第一个消耗查询 Key。如果列表为空，在“消耗查询 API Keys”中添加完整的 `sk-...` Key 并保存即可。
+
+其他站点可选三种认证方式：
 
 - **账号密码登录**：服务端调用登录接口，自动获取并缓存 Token / Cookie，支持失效自动重登。
 - **访问令牌 / Bearer Token**：填写网站生成的访问令牌，服务端按 `Authorization` 头发送。New API 的访问令牌通常需要不带 `Bearer` 前缀，程序会先按该站点的要求尝试，401/403 时自动换成另一种形式重试。
@@ -41,11 +43,11 @@ Cookie 与密码、Token 一样只保存在服务端，不会返回给浏览器�
 
 内置站点类型：
 
-- Sub2：登录 `/api/v1/auth/login`，余额 `/api/v1/auth/me`，读取 `balance`；用量 `/api/v1/usage/dashboard/trend`
+- Sub2 以 API Key 请求 `/v1/usage`，读取 `balance`
 - New API：登录 `/api/user/login`，余额 `/api/user/self`，读取 `quota / 500000`
 - 自定义：手工指定接口路径、余额字段、换算除数和币种
 
-站点类型选“自动识别”时，程序会按 `mePath` 推断出对应的内置预设，用量接口也能正常生效，老配置无需改动。
+站点类型选“自动识别”时，程序会按 `mePath` 推断出对应的内置预设。旧 Sub2 的 `/api/v1/auth/me` 配置也会采用新的 API Key 查询方式。
 
 New API 查询会在填写 `New-Api-User ID` 时携带对应请求头。账号密码登录时程序会尝试从登录响应自动获取用户 ID；如果目标站点返回 409 `Conflict`，请填写该账号对应的数字 ID。使用 Token 时，按目标站点要求填写该 ID。
 
@@ -53,14 +55,14 @@ New API 查询会在填写 `New-Api-User ID` 时携带对应请求头。账号�
 
 Sub2 和 New API 站点均支持独立的“消耗查询 API Keys”（通常以 `sk-` 开头），每个站点最多添加 20 个，可设置名称、修改或删除。点击“消耗查询”会先保存配置，再分别查询各个 Key；单个 Key 失败不影响其他结果。
 
-- **Sub2**：请求站点接口地址下的 `GET /v1/usage`（例如 `https://api.deepspacecode.chat/v1/usage`），发送 `Authorization: Bearer <API Key>`，超时为 20 秒。今日使用金额读取 `usage.today.actual_cost`（同时兼容顶层 `today.actual_cost` 和 `data` 包装），不套用余额换算除数或倍率；展示每个 Key 的今日金额及合计，部分失败时显示仅成功项的小计。金额单位沿用上游接口含义，不自动换算币种。此接口与日报使用的 `/api/v1/usage/dashboard/trend` 独立。
+- **Sub2** 逐个使用 API Key 请求 `GET /v1/usage`。今日金额来自 `usage.today.actual_cost`，也兼容顶层 `today.actual_cost` 和 `data` 包装。页面显示各 Key 的原始今日金额及合计，部分失败时显示成功项小计。晨报使用同一接口的历史日用量。
 - **New API**：请求 `GET /api/usage/token`，发送 `Authorization: Bearer <API Key>`，填写 `New-Api-User ID` 时同时发送 `New-Api-User` 请求头。名称读取 `name`，累计消耗金额为 `total_used / 500000`，剩余金额和总金额分别为 `total_available / 500000`、`total_granted / 500000`，同时兼容旧版 `used_quota` 等字段。此换算固定使用 `500000`，不套用站点的余额倍率或除数；不限额的 Key 仍显示累计消耗，`expires_at` 为 `0` 或 `-1` 时显示永不过期。
 
 New API 今日用量使用已保存的“访问令牌 / Bearer Token”（控制台访问令牌，不是 `sk-` 模型调用 Key）和 `New-Api-User ID`，无需重复填写。程序先从令牌接口取得 `name`，再请求 `GET /api/log/self/stat?token_name=...&start_timestamp=...&end_timestamp=...`，使用 `Authorization: Bearer <访问令牌>` 和 `New-Api-User`，超时 30 秒。统计范围为站点时区当天零点至本次查询时刻，默认 `Asia/Shanghai`（UTC+8）；今日金额为 `data.quota / 500000`。页面分别显示今日金额与累计金额，今日查询失败不影响累计结果，合计只统计成功取得的今日金额。
 
 今日接口按名称筛选，请为上游 Key 设置唯一名称。多个已配置 Key 返回相同名称时，页面会提示修改上游名称，避免将同一份按名称统计的今日用量重复计入合计。
 
-这些 Key 与余额查询使用的账号、密码和控制台访问令牌独立；New API 消耗查询复用站点配置中的 `New-Api-User ID`。Key 只保存在服务端数据库，页面仅收到名称和是否已保存的标记；留空保存保留对应 Key，删除并保存会移除对应 Key。旧的单 Key 配置会自动迁移。
+New API 的消耗查询 Key 独立于余额认证凭据，并复用站点配置中的 `New-Api-User ID`。Key 只保存在服务端数据库，页面仅收到名称和是否已保存的标记。留空保存会保留对应 Key，删除并保存会移除对应 Key。旧的单 Key 配置会自动迁移。
 
 余额看板和站点设置中的“进入网站”按钮会直接在新标签页打开该站点保存的接口地址。跨域网站的浏览器登录态无法由本服务通用注入；自动登录需要目标网站提供 SSO、一次性登录链接或专用换票接口。
 

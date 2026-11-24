@@ -18,8 +18,8 @@ from django.conf import settings
 
 from monitor import state
 from monitor.adapters import (
-    get_usage_keys, infer_adapter, is_newapi_site, is_sub2_site, sanitize_cookie, site_config,
-    upstream_fingerprint, url_for,
+    SUB2_USAGE_PATH, get_usage_keys, is_newapi_site, is_sub2_site, sanitize_cookie,
+    site_config, upstream_fingerprint, url_for,
 )
 from monitor.storage import save_upstream_sessions, save_daily_usage
 from monitor.report_image import render_daily_report
@@ -88,7 +88,7 @@ def _usage_error_message(cfg: dict, keys: list[dict], exc: Exception) -> str:
     return message
 
 
-def get_token_usage(site: dict):
+def get_token_usage(site: dict, *, first_sub2_response: dict | None = None):
     """Query each saved key independently; keep the legacy single-key response."""
     cfg = site_config(site)
     if not (is_sub2_site(cfg) or is_newapi_site(cfg)):
@@ -103,7 +103,10 @@ def get_token_usage(site: dict):
 
     def query(key):
         try:
-            data = _get_token_usage(cfg, key['token'])
+            if first_sub2_response is not None and key['id'] == keys[0]['id']:
+                data = _sub2_today_usage(first_sub2_response)
+            else:
+                data = _get_token_usage(cfg, key['token'])
             if not is_sub2_site(cfg):
                 try:
                     data.update(_get_newapi_today_usage(cfg, data['name'], queried_at))
@@ -211,7 +214,7 @@ def _get_sub2_daily_usage(cfg: dict, token: str, usage_day: str, days: int) -> f
         raise ValueError('Sub2 Key 历史消耗最多查询最近 90 天')
     params = urlencode({'days': days, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
     raw = fetch_json(
-        url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
+        url_for(cfg.get('baseUrl', ''), SUB2_USAGE_PATH) + '?' + params,
         headers={'Authorization': f'Bearer {token}'}, timeout=20,
     )
     return _sub2_daily_cost(raw, usage_day)
@@ -266,7 +269,7 @@ def get_weekly_key_usage(site: dict, queried_at: datetime, *, requested_days: li
         try:
             if is_sub2_site(cfg):
                 params = urlencode({'days': USAGE_HISTORY_DAYS, 'timezone': cfg.get('timezone') or 'Asia/Shanghai'})
-                raw = fetch_json(url_for(cfg.get('baseUrl', ''), '/v1/usage') + '?' + params,
+                raw = fetch_json(url_for(cfg.get('baseUrl', ''), SUB2_USAGE_PATH) + '?' + params,
                                  headers={'Authorization': f'Bearer {key["token"]}'}, timeout=20)
                 return {'raw': raw}
             return {'name': _get_token_usage(cfg, key['token'])['name']}
@@ -363,26 +366,33 @@ def _get_newapi_daily_usage(cfg: dict, key_name: str, queried_at: datetime,
                       'timezone': zone}}
 
 
+def _fetch_sub2_usage(cfg: dict, token: str, *, timeout: int):
+    return fetch_json(
+        url_for(cfg.get('baseUrl', ''), SUB2_USAGE_PATH),
+        headers={'Authorization': f'Bearer {token}'},
+        timeout=timeout,
+    )
+
+
+def _sub2_today_usage(raw) -> dict:
+    inner = raw.get('data') if isinstance(raw, dict) else None
+    data = inner if isinstance(inner, dict) else raw
+    usage = data.get('usage') if isinstance(data, dict) else None
+    stats = usage if isinstance(usage, dict) else data
+    today = stats.get('today') if isinstance(stats, dict) else None
+    value = today.get('actual_cost') if isinstance(today, dict) else None
+    try:
+        cost = float(value) if not isinstance(value, bool) else float('nan')
+    except (TypeError, ValueError):
+        cost = float('nan')
+    if not isfinite(cost):
+        raise ValueError('用量接口未返回有效的 usage.today.actual_cost')
+    return {'todayActualCost': cost}
+
+
 def _get_token_usage(cfg: dict, token: str) -> dict:
     if is_sub2_site(cfg):
-        raw = fetch_json(
-            url_for(cfg.get('baseUrl', ''), '/v1/usage'),
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=20,
-        )
-        inner = raw.get('data') if isinstance(raw, dict) else None
-        data = inner if isinstance(inner, dict) else raw
-        usage = data.get('usage') if isinstance(data, dict) else None
-        stats = usage if isinstance(usage, dict) else data
-        today = stats.get('today') if isinstance(stats, dict) else None
-        value = today.get('actual_cost') if isinstance(today, dict) else None
-        try:
-            cost = float(value) if not isinstance(value, bool) else float('nan')
-        except (TypeError, ValueError):
-            cost = float('nan')
-        if not isfinite(cost):
-            raise ValueError('用量接口未返回有效的 usage.today.actual_cost')
-        return {'todayActualCost': cost}
+        return _sub2_today_usage(_fetch_sub2_usage(cfg, token, timeout=20))
 
     headers = {'Authorization': f'Bearer {token}'}
     user_id = str(cfg.get('newApiUserId') or '').strip()
@@ -553,8 +563,7 @@ def _login_with_guard(site: dict, base_url: str, login_path: str, cache_key: str
 
 # ── Core balance check ──────────────────────────────────────────────────────
 
-def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
-    cfg = site_config(site_input)
+def _get_account_profile(cfg: dict):
     base_url = cfg.get('baseUrl', 'https://ezaiclub.com')
     login_path = cfg.get('loginPath', '/api/v1/auth/login')
     me_path = cfg.get('mePath', '/api/v1/auth/me')
@@ -651,10 +660,37 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
             raise ValueError('Token 无效或已过期，请填写新的 Token')
         else:
             raise
+    return me_data
+
+
+def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
+    cfg = site_config(site_input)
+    sub2 = is_sub2_site(cfg)
+    first_sub2_response = None
+    if sub2:
+        keys = get_usage_keys(cfg)
+        if not keys or not keys[0]['token']:
+            raise ValueError('请在 Sub2 站点设置中填写用于查询余额的 API Key')
+        try:
+            me_data = _fetch_sub2_usage(cfg, keys[0]['token'], timeout=10)
+        except requests.Timeout:
+            raise ValueError('Sub2 余额接口请求超时，请稍后重试') from None
+        except requests.RequestException:
+            raise ValueError('无法连接 Sub2 余额接口，请稍后重试') from None
+        except ValueError as exc:
+            status = getattr(exc, 'status', 0)
+            if status in (401, 403):
+                message = f'Sub2 余额接口返回 HTTP {status}，请检查 API Key'
+            else:
+                message = _usage_error_message(cfg, keys, exc)
+            raise _api_error(message, status or 400) from None
+        first_sub2_response = me_data
+    else:
+        me_data = _get_account_profile(cfg)
 
     profile = me_data.get('data') if isinstance(me_data, dict) else me_data
     if not isinstance(profile, dict):
-        profile = me_data or {}
+        profile = me_data if isinstance(me_data, dict) else {}
 
     configured_field = str(cfg.get('balanceField') or '').strip()
     balance_field = configured_field if (configured_field and configured_field != 'auto') else ''
@@ -675,6 +711,8 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
         if not isfinite(raw_balance):
             raise ValueError()
     except (TypeError, ValueError):
+        if sub2:
+            raise ValueError('Sub2 用量接口未返回有效的账户余额 balance')
         raise ValueError('余额接口响应中没有有效的余额字段')
     balance_captured_at = datetime.now(dt_timezone.utc)
 
@@ -715,13 +753,15 @@ def get_balance(site_input: dict, *, usage_day: str | None = None) -> dict:
 
     today_usage = None
     today_usage_error = ''
-    if not usage_day and (is_sub2_site(cfg) or is_newapi_site(cfg)):
+    if not usage_day and (sub2 or is_newapi_site(cfg)):
         queried_at = datetime.now(dt_timezone.utc)
         try:
             if not get_usage_keys(cfg):
                 today_usage_error = '请先配置消耗查询 API Key'
             else:
-                today_usage = summarize_key_usage(cfg, get_token_usage(cfg), queried_at)
+                usage = (get_token_usage(cfg, first_sub2_response=first_sub2_response)
+                         if sub2 else get_token_usage(cfg))
+                today_usage = summarize_key_usage(cfg, usage, queried_at)
                 if today_usage['cost'] is None:
                     today_usage_error = '未获取到任何 Key 的今日消耗，请检查消耗查询配置'
         except Exception:

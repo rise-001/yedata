@@ -6,14 +6,18 @@ import hashlib
 import re
 import secrets
 
+SUB2_USAGE_PATH = '/v1/usage'
+LEGACY_SUB2_ME_PATH = '/api/v1/auth/me'
+
 SITE_ADAPTERS = {
     'sub2': {
-        'loginPath': '/api/v1/auth/login',
-        'mePath': '/api/v1/auth/me',
-        'usagePath': '/api/v1/usage/dashboard/trend',
+        'authMode': 'apiKey',
+        'loginPath': '',
+        'mePath': SUB2_USAGE_PATH,
+        'usagePath': '',
         'balanceField': 'balance',
         'balanceDivisor': 1,
-        'currency': 'CNY',
+        'currency': 'USD',
     },
     'newapi': {
         'loginPath': '/api/user/login',
@@ -41,7 +45,10 @@ def is_newapi_site(site: dict) -> bool:
 
 
 def is_sub2_site(site: dict) -> bool:
-    return site.get('siteType') == 'sub2' or site.get('mePath') == '/api/v1/auth/me'
+    site_type = site.get('siteType')
+    return site_type == 'sub2' or (
+        site_type in (None, '', 'auto') and site.get('mePath') in (SUB2_USAGE_PATH, LEGACY_SUB2_ME_PATH)
+    )
 
 
 def get_usage_keys(site: dict, *, require_tokens: bool = False) -> list[dict]:
@@ -91,10 +98,10 @@ def infer_adapter(site: dict) -> dict:
     site_type = site.get('siteType', '')
     if site_type in SITE_ADAPTERS:
         return SITE_ADAPTERS[site_type]
-    me_path = site.get('mePath', '')
-    for adapter in SITE_ADAPTERS.values():
-        if me_path and adapter['mePath'] == me_path:
-            return adapter
+    if is_sub2_site(site):
+        return SITE_ADAPTERS['sub2']
+    if site.get('mePath') == SITE_ADAPTERS['newapi']['mePath']:
+        return SITE_ADAPTERS['newapi']
     return {}
 
 
@@ -108,10 +115,15 @@ def site_config(site: dict) -> dict:
     result['balanceField'] = bf if (bf and bf != 'auto') else adapter.get('balanceField', bf)
     result['balanceDivisor'] = site.get('balanceDivisor') or adapter.get('balanceDivisor')
     result['currency'] = site.get('currency') or adapter.get('currency', '')
+    if is_sub2_site(site):
+        for field in ('authMode', 'loginPath', 'mePath', 'usagePath', 'balanceField'):
+            result[field] = adapter[field]
     return result
 
 
 def public_site(site: dict) -> dict:
+    if is_sub2_site(site):
+        site = site_config(site)
     result = {k: v for k, v in site.items() if k not in (*SECRET_FIELDS, 'usageKeys')}
     misplaced_usage_token = is_newapi_site(site) and looks_like_usage_token(site.get('usagePath'))
     if misplaced_usage_token:
